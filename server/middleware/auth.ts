@@ -27,7 +27,9 @@ export async function authenticateToken(
   next: NextFunction
 ): Promise<void> {
   const authHeader = req.headers.authorization;
-  const token = (authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : undefined) || (typeof req.query.token === 'string' ? req.query.token : undefined);
+  const bearerToken = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : undefined;
+  const cookieToken = typeof req.cookies?.renewx_access === 'string' ? req.cookies.renewx_access : undefined;
+  const token = bearerToken || cookieToken || (typeof req.query.token === 'string' ? req.query.token : undefined);
 
   if (!token) {
     // If no token, proceed as guest
