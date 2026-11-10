@@ -59,6 +59,7 @@ const corsOptions: cors.CorsOptions = {
   allowedHeaders: [
     'Content-Type',
     'Authorization',
+    'X-Client-Platform',
     'X-Requested-With',
     'Idempotency-Key',
   ],
