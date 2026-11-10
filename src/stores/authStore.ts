@@ -14,12 +14,12 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       const token = await loadAccessToken();
       if (token) {
-        try { set({ user: await authApi.me() }); }
+        try { set({ user: await authApi.me() }); return; }
         catch { await setAccessToken(null); }
-      } else {
-        // Web reloads restore sessions through the httpOnly refresh cookie.
-        try { set({ user: await authApi.refresh() }); } catch { set({ user: null }); }
       }
+      // Web restores via its httpOnly cookie; native restores from SecureStore.
+      try { set({ user: await authApi.refresh() }); }
+      catch { await setAccessToken(null); set({ user: null }); }
     } finally { set({ ready: true }); }
   },
   login: async (email, password) => { set({ busy: true }); try { set({ user: await authApi.login(email, password) }); } finally { set({ busy: false }); } },
