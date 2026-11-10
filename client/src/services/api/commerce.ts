@@ -1,17 +1,23 @@
 import { request } from "./client";
 
-export type ApiEnvelope<T> = { success: boolean; data: T; message?: string };
+export type ApiEnvelope<T> = { success: boolean; data: T; message?: string; error?: { message?: string } };
 export type Product = {
-  _id: string;
+  id: string;
+  _id?: string;
   name: string;
-  description: string;
+  brand?: string;
+  model?: string;
+  description?: string;
   price: number;
-  images: string[];
+  original_price?: number;
+  image_url?: string;
+  images?: string[];
   category: string;
+  condition?: string;
   stock: number;
-  isFeatured?: boolean;
-  isActive: boolean;
-  sizes?: string[];
+  status?: string;
+  specs?: string | Record<string, unknown>;
+  warranty_months?: number;
 };
 export type Address = {
   _id: string;
@@ -24,53 +30,40 @@ export type Address = {
   isDefault: boolean;
 };
 export type SellRequestInput = {
-  deviceType: "Phone" | "Laptop" | "Tablet" | "Audio" | "Wearable" | "Other";
+  category: string;
   brand: string;
   model: string;
-  condition: "Like new" | "Good" | "Fair" | "Needs repair";
-  notes?: string;
-  images?: string[];
+  storage?: string;
+  condition: Record<string, unknown>;
+  customerPhone: string;
+  address: string;
+  pincode: string;
+  expectedSellingPrice?: number;
+  photos?: string[];
 };
-
-const authenticated = (token: string) => ({
-  headers: { Authorization: `Bearer ${token}` },
-});
-
 export const commerceApi = {
-  products: (params?: { page?: number; limit?: number; category?: string; search?: string }) => {
+  products: (params?: { page?: number; limit?: number; category?: string; search?: string; sort?: string }) => {
     const query = new URLSearchParams();
     Object.entries(params || {}).forEach(([key, value]) => {
       if (value !== undefined && value !== "") query.set(key, String(value));
     });
-    const queryString = query.toString();
-    return request<ApiEnvelope<Product[]> & { pagination?: { total: number; page: number; pages: number } }>(
-      `/api/products${queryString ? `?${queryString}` : ""}`
-    );
+    return request<ApiEnvelope<Product[]> & { total?: number; totalPages?: number; page?: number; limit?: number }>(`/products${query.toString() ? `?${query}` : ""}`);
   },
-  product: (id: string) => request<ApiEnvelope<Product>>(`/api/products/${encodeURIComponent(id)}`),
-  cart: (token: string) => request<ApiEnvelope<any>>("/api/cart", authenticated(token)),
-  addCartItem: (token: string, productId: string, quantity = 1, size?: string) =>
-    request<ApiEnvelope<any>>("/api/cart/add", { method: "POST", ...authenticated(token), body: { productId, quantity, ...(size ? { size } : {}) } }),
-  updateCartItem: (token: string, productId: string, quantity: number, size?: string) =>
-    request<ApiEnvelope<any>>(`/api/cart/update/${encodeURIComponent(productId)}`, { method: "PUT", ...authenticated(token), body: { quantity, ...(size ? { size } : {}) } }),
-  removeCartItem: (token: string, productId: string, size?: string) =>
-    request<ApiEnvelope<any>>(`/api/cart/remove/${encodeURIComponent(productId)}${size ? `?size=${encodeURIComponent(size)}` : ""}`, { method: "DELETE", ...authenticated(token) }),
-  wishlist: (token: string) => request<ApiEnvelope<any>>("/api/wishlist", authenticated(token)),
-  addWishlistItem: (token: string, productId: string) =>
-    request<ApiEnvelope<any>>("/api/wishlist", { method: "POST", ...authenticated(token), body: { productId } }),
-  removeWishlistItem: (token: string, productId: string) =>
-    request<ApiEnvelope<any>>(`/api/wishlist/${encodeURIComponent(productId)}`, { method: "DELETE", ...authenticated(token) }),
-  addresses: (token: string) => request<ApiEnvelope<Address[]>>("/api/addresses", authenticated(token)),
-  addAddress: (token: string, address: Omit<Address, "_id">) =>
-    request<ApiEnvelope<Address>>("/api/addresses", { method: "POST", ...authenticated(token), body: address }),
-  updateAddress: (token: string, id: string, address: Omit<Address, "_id">) =>
-    request<ApiEnvelope<Address>>(`/api/addresses/${encodeURIComponent(id)}`, { method: "PUT", ...authenticated(token), body: address }),
-  deleteAddress: (token: string, id: string) =>
-    request<ApiEnvelope<unknown>>(`/api/addresses/${encodeURIComponent(id)}`, { method: "DELETE", ...authenticated(token) }),
-  sellRequests: (token: string) => request<ApiEnvelope<any[]>>("/api/sell-requests", authenticated(token)),
-  createSellRequest: (token: string, input: SellRequestInput) =>
-    request<ApiEnvelope<any>>("/api/sell-requests", { method: "POST", ...authenticated(token), body: input }),
-  adminStats: (token: string) => request<ApiEnvelope<any>>("/api/admin/stats", authenticated(token)),
-  adminOrders: (token: string) => request<ApiEnvelope<any[]>>("/api/orders/admin/all", authenticated(token)),
-  adminSellRequests: (token: string) => request<ApiEnvelope<any[]>>("/api/sell-requests/admin/all", authenticated(token)),
+  product: (id: string) => request<ApiEnvelope<Product>>(`/products/${encodeURIComponent(id)}`),
+  orders: () => request<ApiEnvelope<any[]> & { count?: number }>("/orders"),
+  order: (id: string) => request<ApiEnvelope<any>>(`/orders/${encodeURIComponent(id)}`),
+  addresses: () => request<ApiEnvelope<any[]>>("/users/me/addresses"),
+  addAddress: (address: Record<string, unknown>) => request<ApiEnvelope<any>>("/users/me/addresses", { method: "POST", body: address }),
+  updateAddress: (id: string, address: Record<string, unknown>) => request<ApiEnvelope<any>>(`/users/me/addresses/${encodeURIComponent(id)}`, { method: "PUT", body: address }),
+  deleteAddress: (id: string) => request<ApiEnvelope<unknown>>(`/users/me/addresses/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  updateProfile: (profile: Record<string, unknown>) => request<ApiEnvelope<any>>("/users/me/profile", { method: "PATCH", body: profile }),
+  tradeInQuote: (input: Record<string, unknown>) => request<ApiEnvelope<any>>("/trade-in/quote", { method: "POST", body: input }),
+  createTradeIn: (input: SellRequestInput) => request<ApiEnvelope<any>>("/trade-in/pickup", { method: "POST", body: input }),
+  myTradeIns: () => request<ApiEnvelope<any[]>>("/trade-in/my-requests"),
+  adminAnalytics: (period = "month") => request<ApiEnvelope<any>>(`/analytics?period=${period}`),
+  adminUsers: (params?: { page?: number; limit?: number; search?: string }) => {
+    const query = new URLSearchParams();
+    Object.entries(params || {}).forEach(([k,v]) => { if (v !== undefined && v !== "") query.set(k,String(v)); });
+    return request<ApiEnvelope<any[]> & { total?: number }>(`/users${query.toString()? `?${query}`:""}`);
+  },
 };
