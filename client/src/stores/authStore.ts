@@ -40,8 +40,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     finally { set({ busy: false }); }
   },
   logout: async () => {
-    await authApi.logout();
-    set({ user: null });
+    try { await authApi.logout(); }
+    finally { set({ user: null }); }
   },
   refreshProfile: async () => set({ user: await authApi.me() }),
 }));
