@@ -1,39 +1,33 @@
 # RenewX Crew 2.0
 
-A unified Expo application for Android, iOS, and Web (React Native Web), backed by the existing RenewX API.
+A unified Expo application for Android, iOS and web using React Native, Expo Router and strict TypeScript.
 
-## Product direction
-Premium pre-owned electronics marketplace: discover, buy, sell, and upgrade devices.
+## Stack
+- Expo SDK 54 and Expo Router
+- TypeScript (.ts / .tsx) application source
+- React Native and React Native Web
+- TanStack Query for server state
+- Zustand for small client-only UI state
+- Existing RenewX Express/MongoDB backend (reuse; do not replace)
 
-## Platforms
-- Android and iOS: Expo native builds with EAS Build.
-- Web: Expo web export deployed with EAS Hosting (subject to account/hosting availability).
-- One Expo Router codebase; no separate React/Vite web application.
+## Local setup
+1. Install Node.js LTS.
+2. Run npm install.
+3. Copy .env.example to .env and set EXPO_PUBLIC_API_URL to the existing backend URL.
+4. Run npm run doctor and npm run typecheck.
+5. Run npm start; use npm run web for browser development.
 
-## Requirements
-- Node.js LTS compatible with the selected Expo SDK.
-- npm
-- Expo account for EAS Build/Hosting.
+EXPO_PUBLIC variables are bundled into the client. Never put private keys, database credentials or server secrets in them.
 
-## Getting started
-```bash
-npm install
-npx expo start
-```
+## Architecture rules
+- app/ contains route composition; src/features contains domain logic.
+- Application source must use TypeScript only. babel.config.js remains JavaScript because Babel expects a JS config file.
+- TanStack Query owns remote/server state; Zustand is for transient UI state only.
+- Do not add fake products, orders, users, ratings, stock or metrics.
+- Do not guess backend routes or DTOs. Verify the existing API contract first.
+- The server is authoritative for price, stock, discounts, checkout totals and order status.
+- Preserve RenewX navy #111827, yellow #FFC400, white and cloud-grey identity.
+- Build responsive mobile and desktop experiences from the same app.
 
-Web:
-```bash
-npx expo start --web
-```
-
-Validate:
-```bash
-npx expo-doctor
-npx expo export --platform web
-```
-
-## Environment
-Copy `.env.example` to `.env` and set `EXPO_PUBLIC_API_URL` to the existing RenewX API base URL. Do not commit real credentials or secrets. Anything prefixed `EXPO_PUBLIC_` is embedded in client bundles and must never contain secrets.
-
-## Current milestone
-Foundation scaffold only. Storefront screens will be implemented after the existing backend API contract has been audited and documented. No demo products or fake customer data are included.
+## Current implementation status
+The repository contains a TypeScript foundation, navigation shell, design tokens, shared API boundary, feature domain types and a starter home screen. Live catalogue, auth, checkout and order workflows are not connected. Expo Doctor, typecheck, web export and native builds have not yet been run. See docs/PROJECT-AUDIT.md and docs/ROADMAP.md.
