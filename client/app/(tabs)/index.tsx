@@ -1,57 +1,12 @@
-import { StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import Screen from '../../src/components/Screen';
-import StateMessage from '../../src/components/StateMessage';
-import { colors, radius, spacing } from '../../src/theme';
-
-const categories = [
-  { title: 'Phones', icon: 'phone-portrait-outline' as const },
-  { title: 'Laptops', icon: 'laptop-outline' as const },
-  { title: 'Tablets', icon: 'tablet-portrait-outline' as const },
-  { title: 'Accessories', icon: 'headset-outline' as const },
-];
-
-export default function HomeScreen() {
-  return <Screen contentContainerStyle={s.page}>
-    <View style={s.top}>
-      <Text style={s.brand}>Renew<Text style={s.brandX}>X</Text></Text>
-      <View style={s.location}><Ionicons name="location-outline" size={15} color={colors.navy}/><Text style={s.locText}>Set location</Text></View>
-    </View>
-    <View style={s.search}><Ionicons name="search-outline" size={19} color={colors.muted}/><Text style={s.searchText}>Search phones, laptops and more</Text><Ionicons name="options-outline" size={19} color={colors.navy}/></View>
-    <View style={s.hero}>
-      <View style={s.heroCopy}>
-        <Text style={s.heroEyebrow}>RENEWX MARKETPLACE</Text>
-        <Text style={s.heroTitle}>Pre-owned tech.{ '\n' }Smarter value.</Text>
-        <Text style={s.heroSub}>Buy • Sell • Upgrade</Text>
-      </View>
-      <Ionicons name="phone-portrait" size={76} color={colors.yellow}/>
-    </View>
-    <View style={s.section}><Text style={s.sectionTitle}>Explore categories</Text><Text style={s.see}>See all</Text></View>
-    <View style={s.grid}>{categories.map(item=><View key={item.title} style={s.category}><View style={s.art}><Ionicons name={item.icon} size={36} color={colors.navy}/></View><Text style={s.catText}>{item.title}</Text></View>)}</View>
-    <View style={s.section}><Text style={s.sectionTitle}>Picked for you</Text></View>
-    <View style={s.empty}><StateMessage title="Live catalogue coming next" description="We’ll connect real RenewX products after verifying the backend catalogue API. No demo listings or made-up prices." /></View>
-  </Screen>;
-}
-const s=StyleSheet.create({
- page:{gap:spacing.lg,paddingTop:spacing.lg},
- top:{flexDirection:'row',justifyContent:'space-between',alignItems:'center'},
- brand:{fontSize:27,fontWeight:'900',fontStyle:'italic',color:colors.navy,letterSpacing:-1.4},
- brandX:{color:colors.yellow},
- location:{flexDirection:'row',alignItems:'center',gap:4,backgroundColor:colors.cloud,paddingHorizontal:10,paddingVertical:9,borderRadius:radius.pill},
- locText:{color:colors.navy,fontSize:12,fontWeight:'600'},
- search:{flexDirection:'row',alignItems:'center',gap:10,borderWidth:1,borderColor:colors.border,borderRadius:13,paddingHorizontal:14,paddingVertical:14},
- searchText:{color:colors.muted,fontSize:13,flex:1},
- hero:{minHeight:174,backgroundColor:colors.navy,borderRadius:20,padding:20,flexDirection:'row',alignItems:'center',justifyContent:'space-between',overflow:'hidden'},
- heroCopy:{flex:1,gap:8},
- heroEyebrow:{color:colors.yellow,fontSize:10,fontWeight:'800',letterSpacing:1.2},
- heroTitle:{color:colors.white,fontSize:25,fontWeight:'900',lineHeight:29,maxWidth:220},
- heroSub:{color:colors.white,fontSize:12,fontWeight:'600'},
- section:{flexDirection:'row',justifyContent:'space-between',alignItems:'center'},
- sectionTitle:{color:colors.navy,fontSize:18,fontWeight:'800'},
- see:{color:colors.muted,fontSize:12,fontWeight:'600'},
- grid:{flexDirection:'row',flexWrap:'wrap',gap:10},
- category:{flexBasis:'47%',flexGrow:1,minHeight:112,backgroundColor:colors.surface,borderWidth:1,borderColor:colors.border,borderRadius:16,padding:10,alignItems:'center',justifyContent:'center',gap:8},
- art:{height:48,alignItems:'center',justifyContent:'center'},
- catText:{color:colors.navy,fontWeight:'700',fontSize:13},
- empty:{borderWidth:1,borderColor:colors.border,borderRadius:18,padding:spacing.md,backgroundColor:colors.white}
-});
+import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { router } from "expo-router";
+import { useQuery } from "@tanstack/react-query";
+import { Ionicons } from "@expo/vector-icons";
+import Screen from "../../src/components/Screen";
+import StateMessage from "../../src/components/StateMessage";
+import { commerceApi, Product } from "../../src/services/api/commerce";
+import { useAuthStore } from "../../src/stores/authStore";
+import { colors, radius, spacing } from "../../src/theme";
+const categories=[{title:"Phones",icon:"phone-portrait-outline" as const},{title:"Laptops",icon:"laptop-outline" as const},{title:"Tablets",icon:"tablet-portrait-outline" as const},{title:"Audio",icon:"headset-outline" as const}];
+export default function HomeScreen(){const user=useAuthStore(s=>s.user);const query=useQuery({queryKey:["home-featured-products"],queryFn:()=>commerceApi.products({page:1,limit:4}),retry:1});const products=query.data?.data||[];return <Screen contentContainerStyle={s.page}><View style={s.top}><Text style={s.brand}>Renew<Text style={s.brandX}>X</Text></Text><Pressable onPress={()=>router.push("/onboarding")} style={s.location}><Ionicons name="location-outline" size={15} color={colors.navy}/><Text style={s.locText}>{user?.city||"Set location"}</Text></Pressable></View><Pressable onPress={()=>router.push("/(tabs)/shop")} style={s.search}><Ionicons name="search-outline" size={19} color={colors.muted}/><Text style={s.searchText}>Search phones, laptops and more</Text><Ionicons name="options-outline" size={19} color={colors.navy}/></Pressable><View style={s.hero}><View style={s.heroCopy}><Text style={s.heroEyebrow}>RENEWX MARKETPLACE</Text><Text style={s.heroTitle}>Pre-owned tech.{ "\n" }Smarter value.</Text><Text style={s.heroSub}>Buy • Sell • Upgrade</Text><Pressable onPress={()=>router.push("/(tabs)/shop")} style={s.heroButton}><Text style={s.heroButtonText}>Explore devices</Text></Pressable></View><Ionicons name="phone-portrait" size={76} color={colors.yellow}/></View><View style={s.section}><Text style={s.sectionTitle}>Explore categories</Text><Pressable onPress={()=>router.push("/(tabs)/shop")}><Text style={s.see}>See all</Text></Pressable></View><View style={s.grid}>{categories.map(item=><Pressable key={item.title} onPress={()=>router.push({pathname:"/(tabs)/shop",params:{category:item.title}})} style={s.category}><View style={s.art}><Ionicons name={item.icon} size={36} color={colors.navy}/></View><Text style={s.catText}>{item.title}</Text></Pressable>)}</View><View style={s.section}><Text style={s.sectionTitle}>Latest devices</Text><Pressable onPress={()=>router.push("/(tabs)/shop")}><Text style={s.see}>View all</Text></Pressable></View>{query.isPending?<View style={s.loading}><ActivityIndicator color={colors.navy}/><Text style={s.muted}>Loading live products…</Text></View>:query.isError?<View style={s.empty}><StateMessage title="Catalogue unavailable" description="The live product catalogue couldn't be reached."/><Pressable onPress={()=>query.refetch()}><Text style={s.see}>Try again</Text></Pressable></View>:products.length===0?<View style={s.empty}><StateMessage title="No products listed yet" description="Published RenewX devices will appear here. No demo products are shown."/></View>:<View style={s.productList}>{products.map((p:Product)=><Pressable key={p.id||p._id} onPress={()=>router.push({pathname:"/product/[id]",params:{id:p.id||p._id||""}})} style={s.product}>{p.image_url||p.images?.[0]?<Image source={{uri:p.image_url||p.images?.[0]}} style={s.productImage} resizeMode="contain"/>:<View style={s.productImage}><Ionicons name="phone-portrait-outline" size={28} color={colors.muted}/></View>}<Text numberOfLines={1} style={s.productName}>{p.name}</Text><Text style={s.productPrice}>₹{Number(p.price).toLocaleString("en-IN")}</Text></Pressable>)}</View>}</Screen>}
+const s=StyleSheet.create({page:{gap:spacing.lg,paddingTop:spacing.lg,paddingBottom:spacing.xxl},top:{flexDirection:"row",justifyContent:"space-between",alignItems:"center"},brand:{fontSize:27,fontWeight:"900",fontStyle:"italic",color:colors.navy,letterSpacing:-1.4},brandX:{color:colors.yellow},location:{flexDirection:"row",alignItems:"center",gap:4,backgroundColor:colors.cloud,paddingHorizontal:10,paddingVertical:9,borderRadius:radius.pill},locText:{color:colors.navy,fontSize:12,fontWeight:"600"},search:{flexDirection:"row",alignItems:"center",gap:10,borderWidth:1,borderColor:colors.border,borderRadius:13,paddingHorizontal:14,paddingVertical:14},searchText:{color:colors.muted,fontSize:13,flex:1},hero:{minHeight:190,backgroundColor:colors.navy,borderRadius:20,padding:20,flexDirection:"row",alignItems:"center",justifyContent:"space-between",overflow:"hidden"},heroCopy:{flex:1,gap:8},heroEyebrow:{color:colors.yellow,fontSize:10,fontWeight:"800",letterSpacing:1.2},heroTitle:{color:colors.white,fontSize:25,fontWeight:"900",lineHeight:29,maxWidth:220},heroSub:{color:colors.white,fontSize:12,fontWeight:"600"},heroButton:{alignSelf:"flex-start",backgroundColor:colors.yellow,paddingHorizontal:14,paddingVertical:9,borderRadius:radius.pill,marginTop:4},heroButtonText:{color:colors.navy,fontWeight:"900",fontSize:11},section:{flexDirection:"row",justifyContent:"space-between",alignItems:"center"},sectionTitle:{color:colors.navy,fontSize:18,fontWeight:"800"},see:{color:colors.navy,fontSize:12,fontWeight:"800"},grid:{flexDirection:"row",flexWrap:"wrap",gap:10},category:{flexBasis:"47%",flexGrow:1,minHeight:105,backgroundColor:colors.surface,borderWidth:1,borderColor:colors.border,borderRadius:16,padding:10,alignItems:"center",justifyContent:"center",gap:8},art:{height:48,alignItems:"center",justifyContent:"center"},catText:{color:colors.navy,fontWeight:"700",fontSize:13},loading:{minHeight:120,alignItems:"center",justifyContent:"center",gap:10},muted:{color:colors.muted,fontSize:12},empty:{borderWidth:1,borderColor:colors.border,borderRadius:18,padding:spacing.md,backgroundColor:colors.white},productList:{flexDirection:"row",flexWrap:"wrap",gap:10},product:{width:"48%",flexGrow:1,borderWidth:1,borderColor:colors.border,borderRadius:radius.lg,padding:10,gap:6},productImage:{width:"100%",height:125,backgroundColor:colors.cloud,borderRadius:radius.md,alignItems:"center",justifyContent:"center"},productName:{color:colors.navy,fontWeight:"800",fontSize:12},productPrice:{color:colors.navy,fontWeight:"900",fontSize:14}});
