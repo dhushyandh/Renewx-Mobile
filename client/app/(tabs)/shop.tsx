@@ -32,6 +32,8 @@ export default function ShopScreen() {
     getNextPageParam: (lastPage) => lastPage.page < lastPage.totalPages ? lastPage.page + 1 : undefined,
   });
 
+  const loadNextPage = () => productsQuery.fetchNextPage();
+
   const products = useMemo(() => {
     const list = [...(productsQuery.data?.pages.flatMap(page => page.data) || [])];
     if (sort === "low") list.sort((a, b) => a.price - b.price);
@@ -81,7 +83,7 @@ export default function ShopScreen() {
         <StateMessage title={query.trim() ? "No matching devices" : "No devices available yet"} description="Try another search or category. New listings will appear here when they are published."/>
         <Pressable onPress={() => {setQuery("");setActiveCategory("All");setSort("recommended");}} style={styles.resetButton}><Text style={styles.resetText}>Clear filters</Text></Pressable>
       </View>
-      : <><View style={styles.grid}>{products.map(product => <ProductCard key={product.id || product._id} product={product}/>)}</View>{productsQuery.hasNextPage ? <Pressable disabled={productsQuery.isFetchingNextPage} onPress={() => productsQuery.fetchNextPage()} style={styles.loadMore}>{productsQuery.isFetchingNextPage ? <ActivityIndicator color={colors.navy}/> : <Text style={styles.resetText}>Load more devices</Text>}</Pressable> : null}{productsQuery.isFetchNextPageError ? <Pressable onPress={() => productsQuery.fetchNextPage()} style={styles.loadMore}><Text style={styles.resetText}>Could not load more · Retry</Text></Pressable> : null}</>}
+      : <><View style={styles.grid}>{products.map(product => <ProductCard key={product.id || product._id} product={product}/>)}</View>{productsQuery.hasNextPage ? <Pressable disabled={productsQuery.isFetchingNextPage} onPress={() => loadNextPage()} style={styles.loadMore}>{productsQuery.isFetchingNextPage ? <ActivityIndicator color={colors.navy}/> : <Text style={styles.resetText}>Load more devices</Text>}</Pressable> : null}{productsQuery.isFetchNextPageError ? <Pressable onPress={() => productsQuery.fetchNextPage()} style={styles.loadMore}><Text style={styles.resetText}>Could not load more · Retry</Text></Pressable> : null}</>}
     </Screen>
   );
 }
