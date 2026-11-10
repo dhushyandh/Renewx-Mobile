@@ -38,6 +38,7 @@ export const authApi = {
     return result.data;
   },
   async logout() {
-    await setAccessToken(null);
+    try { await request("/auth/logout", { method: "POST" }); }
+    finally { await setAccessToken(null); }
   },
 };
