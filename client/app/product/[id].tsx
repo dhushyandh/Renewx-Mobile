@@ -8,16 +8,18 @@ import StateMessage from "../../src/components/StateMessage";
 import { commerceApi } from "../../src/services/api/commerce";
 import { useCommerceStore } from "../../src/stores/commerceStore";
 import { colors, radius, spacing } from "../../src/theme";
+import { useAuthStore } from "../../src/stores/authStore";
 
 export default function ProductDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [added, setAdded] = useState(false);
   const addToCart = useCommerceStore(s => s.addToCart);
   const queryClient = useQueryClient();
+  const user = useAuthStore(state => state.user);
   const query = useQuery({ queryKey: ["product", id], queryFn: () => commerceApi.product(String(id)), enabled: Boolean(id), retry: 1 });
   const product = query.data?.data;
   const productId = product?.id || product?._id || "";
-  const wishlistQuery = useQuery({ queryKey: ["wishlist"], queryFn: commerceApi.wishlist, retry: 1 });
+  const wishlistQuery = useQuery({ queryKey: ["wishlist"], queryFn: commerceApi.wishlist, enabled: Boolean(user), retry: 1 });
   const wishlistItems = wishlistQuery.data?.data?.products || [];
   const saved = wishlistItems.some(item => (item.id || item._id) === productId);
   const wishlistMutation = useMutation({
@@ -28,7 +30,7 @@ export default function ProductDetailsScreen() {
   if (query.isError || !product) return <Screen contentContainerStyle={s.center}><StateMessage title="Product unavailable" description={query.error instanceof Error ? query.error.message : "This product may have been removed or is no longer available."}/><Pressable style={s.primary} onPress={() => router.replace("/(tabs)/shop")}><Text style={s.primaryText}>Back to shop</Text></Pressable></Screen>;
   const image = product.image_url || product.images?.[0];
   return <Screen contentContainerStyle={s.page}>
-    <View style={s.top}><Pressable onPress={() => router.back()} style={s.iconButton}><Ionicons name="arrow-back" size={21} color={colors.navy}/></Pressable><Text style={s.topTitle}>Product details</Text><Pressable disabled={wishlistMutation.isPending || !productId} onPress={() => wishlistMutation.mutate(!saved)} accessibilityRole="button" accessibilityLabel={saved ? "Remove from wishlist" : "Save to wishlist"} style={s.iconButton}><Ionicons name={saved ? "heart" : "heart-outline"} size={22} color={saved ? colors.danger : colors.navy}/></Pressable></View>
+    <View style={s.top}><Pressable onPress={() => router.back()} style={s.iconButton}><Ionicons name="arrow-back" size={21} color={colors.navy}/></Pressable><Text style={s.topTitle}>Product details</Text><Pressable disabled={!user || wishlistMutation.isPending || !productId} onPress={() => wishlistMutation.mutate(!saved)} accessibilityRole="button" accessibilityLabel={saved ? "Remove from wishlist" : "Save to wishlist"} style={s.iconButton}><Ionicons name={saved ? "heart" : "heart-outline"} size={22} color={saved ? colors.danger : colors.navy}/></Pressable></View>
     <View style={s.imageWrap}>{image ? <Image source={{uri:image}} resizeMode="contain" style={s.image}/> : <Ionicons name="phone-portrait-outline" size={76} color={colors.muted}/>}</View>
     <View style={s.details}>
       <Text style={s.category}>{product.category} {product.condition ? "· "+product.condition : ""}</Text><Text style={s.name}>{product.name}</Text>
