@@ -2,7 +2,7 @@ import { request } from "./client";
 
 export type ApiEnvelope<T> = { success: boolean; data: T; message?: string; error?: { message?: string } };
 export type Product = {
-  id: string; _id?: string; name: string; brand?: string; model?: string; description?: string;
+  id?: string; _id?: string; name: string; brand?: string; model?: string; description?: string;
   price: number; original_price?: number; image_url?: string; images?: string[]; category: string;
   condition?: string; stock: number; status?: string; specs?: string | Record<string, unknown>; warranty_months?: number;
 };
