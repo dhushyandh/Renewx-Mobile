@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "RenewX Crew",
+    "slug": "renewx-crew-2",
+    "version": "2.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "renewx",
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": false
+    },
+    "web": {
+      "bundler": "metro",
+      "name": "RenewX Crew",
+      "shortName": "RenewX",
+      "themeColor": "#FFFFFF",
+      "backgroundColor": "#FFFFFF"
+    },
+    "android": {
+      "package": "com.renewx.crew"
+    },
+    "ios": {
+      "bundleIdentifier": "com.renewx.crew"
+    }
+  }
+}
