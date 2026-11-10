@@ -13,6 +13,7 @@ const categories = ["All", "SMARTPHONES", "LAPTOPS", "TABLETS", "AUDIO", "WEARAB
 export default function ShopScreen() {
   const params = useLocalSearchParams<{ category?: string }>();
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState(params.category || "All");
   const [sort, setSort] = useState<"recommended" | "low" | "high">("recommended");
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -21,13 +22,18 @@ export default function ShopScreen() {
     if (params.category) setActiveCategory(params.category);
   }, [params.category]);
 
+  useEffect(() => {
+    const timeout = setTimeout(() => setDebouncedQuery(query.trim()), 300);
+    return () => clearTimeout(timeout);
+  }, [query]);
+
   const productsQuery = useInfiniteQuery({
-    queryKey: ["products", activeCategory, query.trim(), sort],
+    queryKey: ["products", activeCategory, debouncedQuery, sort],
     initialPageParam: 1,
     queryFn: ({ pageParam }) => commerceApi.products({
       page: pageParam, limit: 24,
       ...(activeCategory !== "All" ? { category: activeCategory } : {}),
-      ...(query.trim() ? { search: query.trim() } : {}),
+      ...(debouncedQuery ? { search: debouncedQuery } : {}),
       ...(sort === "low" ? { sort: "price_asc" } : sort === "high" ? { sort: "price_desc" } : {}),
     }),
     getNextPageParam: (lastPage) => lastPage.page < lastPage.totalPages ? lastPage.page + 1 : undefined,
