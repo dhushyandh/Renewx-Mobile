@@ -1,23 +1,7 @@
 # Project Audit
 
-## Repository status
-This repository was verified as empty before the initial scaffold was created. No existing application source was available here to inspect.
+The Renewx-Mobile repository was empty at initial setup. It now contains a TypeScript Expo Router foundation, feature folders, shared theme tokens, typed API boundary, query client, UI state store and an initial storefront shell.
 
-## Required external audit
-The following existing RenewX systems must be inspected before feature implementation:
-- Existing Expo application repository/source.
-- Existing customer web experience (if separate; it is not to be rebuilt as a separate app).
-- Existing Express/MongoDB backend.
-- Product, category, search, cart, checkout, payment, order, tracking, sell/upgrade and profile endpoints.
-- Google authentication configuration and signing fingerprints.
-- Existing image CDN/storage conventions.
+Not yet audited: existing backend repository, API endpoints, authentication, catalogue data, image URL behavior, payment/shipping, tracking and selling flows.
 
-## Reuse policy
-Preserve working backend APIs and database records. Do not migrate schemas or alter production data as part of this client scaffold.
-
-## Open questions
-- Confirm canonical production API base URL.
-- Obtain endpoint contract and representative sanitized responses.
-- Confirm authentication token format and refresh flow.
-- Confirm product image URL transformation rules.
-- Confirm pagination, filter and sorting query conventions.
+The current screens are structural scaffolding, not completed production features. No demo products, fake orders, invented customer data or hard-coded metrics should be added. Android/iOS builds, web export and responsive runtime behavior remain unverified.
