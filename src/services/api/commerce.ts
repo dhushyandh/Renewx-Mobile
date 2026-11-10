@@ -42,8 +42,9 @@ export const commerceApi = {
     Object.entries(params || {}).forEach(([key, value]) => {
       if (value !== undefined && value !== "") query.set(key, String(value));
     });
+    const queryString = query.toString();
     return request<ApiEnvelope<Product[]> & { pagination?: { total: number; page: number; pages: number } }>(
-      `/api/products${query.size ? `?${query.toString()}` : ""}`
+      `/api/products${queryString ? `?${queryString}` : ""}`
     );
   },
   product: (id: string) => request<ApiEnvelope<Product>>(`/api/products/${encodeURIComponent(id)}`),
