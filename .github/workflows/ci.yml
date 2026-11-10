@@ -26,5 +26,9 @@ jobs:
         run: npm run typecheck:server
       - name: Run server tests
         run: npm run test:server
+        env:
+          NODE_ENV: test
+          MONGODB_URI: mongodb://127.0.0.1:27017/renewx_ci_test
+          JWT_SECRET: ci-only-not-a-real-secret
       - name: Export Expo web build
         run: npm run build:client
