@@ -17,8 +17,8 @@ export class ApiError extends Error {
   }
 }
 
-const RAW_API_URL = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\\/+$/, "");
-const API_URL = RAW_API_URL?.replace(/\\/api$/i, "");
+const RAW_API_URL = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\/+$/, "");
+const API_URL = RAW_API_URL?.replace(/\/api$/i, "");
 const API_PREFIX = "/api";
 const DEFAULT_TIMEOUT_MS = 20_000;
 const TOKEN_KEY = "renewx_access_token";
