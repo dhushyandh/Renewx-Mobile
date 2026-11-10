@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
 import Screen from "../../src/components/Screen";
 import StateMessage from "../../src/components/StateMessage";
@@ -13,17 +13,22 @@ export default function ProductDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [added, setAdded] = useState(false);
   const addToCart = useCommerceStore(s => s.addToCart);
-  const toggleWishlist = useCommerceStore(s => s.toggleWishlist);
-  const wishlist = useCommerceStore(s => s.wishlist);
+  const queryClient = useQueryClient();
   const query = useQuery({ queryKey: ["product", id], queryFn: () => commerceApi.product(String(id)), enabled: Boolean(id), retry: 1 });
   const product = query.data?.data;
   const productId = product?.id || product?._id || "";
-  const saved = wishlist.some(item => (item.id || item._id) === productId);
+  const wishlistQuery = useQuery({ queryKey: ["wishlist"], queryFn: commerceApi.wishlist, retry: 1 });
+  const wishlistItems = wishlistQuery.data?.data?.products || [];
+  const saved = wishlistItems.some(item => (item.id || item._id) === productId);
+  const wishlistMutation = useMutation({
+    mutationFn: (save: boolean) => save ? commerceApi.addWishlistItem(productId) : commerceApi.removeWishlistItem(productId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["wishlist"] }),
+  });
   if (query.isPending) return <Screen contentContainerStyle={s.center}><ActivityIndicator color={colors.navy}/><Text style={s.muted}>Loading product…</Text></Screen>;
   if (query.isError || !product) return <Screen contentContainerStyle={s.center}><StateMessage title="Product unavailable" description={query.error instanceof Error ? query.error.message : "This product may have been removed or is no longer available."}/><Pressable style={s.primary} onPress={() => router.replace("/(tabs)/shop")}><Text style={s.primaryText}>Back to shop</Text></Pressable></Screen>;
   const image = product.image_url || product.images?.[0];
   return <Screen contentContainerStyle={s.page}>
-    <View style={s.top}><Pressable onPress={() => router.back()} style={s.iconButton}><Ionicons name="arrow-back" size={21} color={colors.navy}/></Pressable><Text style={s.topTitle}>Product details</Text><Pressable onPress={() => toggleWishlist(product)} style={s.iconButton}><Ionicons name={saved ? "heart" : "heart-outline"} size={22} color={saved ? colors.danger : colors.navy}/></Pressable></View>
+    <View style={s.top}><Pressable onPress={() => router.back()} style={s.iconButton}><Ionicons name="arrow-back" size={21} color={colors.navy}/></Pressable><Text style={s.topTitle}>Product details</Text><Pressable disabled={wishlistMutation.isPending || !productId} onPress={() => wishlistMutation.mutate(!saved)} accessibilityRole="button" accessibilityLabel={saved ? "Remove from wishlist" : "Save to wishlist"} style={s.iconButton}><Ionicons name={saved ? "heart" : "heart-outline"} size={22} color={saved ? colors.danger : colors.navy}/></Pressable></View>
     <View style={s.imageWrap}>{image ? <Image source={{uri:image}} resizeMode="contain" style={s.image}/> : <Ionicons name="phone-portrait-outline" size={76} color={colors.muted}/>}</View>
     <View style={s.details}>
       <Text style={s.category}>{product.category} {product.condition ? "· "+product.condition : ""}</Text><Text style={s.name}>{product.name}</Text>
