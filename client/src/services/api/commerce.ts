@@ -34,8 +34,8 @@ export const commerceApi = {
   updateAddress: (id: string, address: Record<string, unknown>) => request<ApiEnvelope<any>>(`/users/me/addresses/${encodeURIComponent(id)}`, { method: "PUT", body: address }),
   deleteAddress: (id: string) => request<ApiEnvelope<unknown>>(`/users/me/addresses/${encodeURIComponent(id)}`, { method: "DELETE" }),
   updateProfile: (profile: Record<string, unknown>) => request<ApiEnvelope<any>>("/users/me/profile", { method: "PATCH", body: profile }),
-  brands: (category: string) => request<ApiEnvelope<CatalogBrand[]>>(`/brands?category=${encodeURIComponent(category)}`),
-  models: (brandId: string, category: string) => request<ApiEnvelope<CatalogModel[]>>(`/models?brand_id=${encodeURIComponent(brandId)}&category=${encodeURIComponent(category)}`),
+  brands: (category: string) => { const key: Record<string, string> = { Smartphone: "Smartphones", Laptop: "Laptops", Tablet: "Tablets", Audio: "Audio", Wearable: "Wearables", Other: "All" }; return request<ApiEnvelope<CatalogBrand[]>>(`/brands?category=${encodeURIComponent(key[category] || category)}`); },
+  models: (brandId: string, category: string) => { const key: Record<string, string> = { Smartphone: "smartphones", Laptop: "laptops", Tablet: "tablets", Audio: "audio", Wearable: "wearables", Other: "all" }; return request<ApiEnvelope<CatalogModel[]>>(`/models?brand_id=${encodeURIComponent(brandId)}&category=${encodeURIComponent(key[category] || category)}`); },
   tradeInQuote: (input: Record<string, unknown>) => request<ApiEnvelope<any>>("/trade-in/quote", { method: "POST", body: input }),
   uploadImageBase64: (base64: string, fileName: string, contentType: string) =>
     request<ApiEnvelope<{ url: string }>>("/upload/base64", { method: "POST", body: { base64, fileName, contentType } }),
