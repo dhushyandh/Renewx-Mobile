@@ -24,7 +24,7 @@ export interface FormattedUniversalOrder {
     placed_at: string;
     formatted_date: string;
     formatted_time: string;
-    estimated_delivery: string;
+    estimated_delivery?: string;
   };
   items: Array<{
     product_id?: string;
@@ -48,7 +48,6 @@ export interface FormattedUniversalOrder {
     tracking_number?: string;
     estimated_delivery?: string;
   };
-  raw_order: any;
 }
 
 export interface FormattedUniversalSell {
@@ -93,7 +92,6 @@ export interface FormattedUniversalSell {
     address: string;
     pincode: string;
   };
-  raw_trade_in: any;
 }
 
 function cleanIdQuery(rawQuery: string): { original: string; clean: string; prefixHint: 'order' | 'sell' | 'unknown' } {
@@ -153,14 +151,9 @@ async function formatOrderResult(o: any): Promise<FormattedUniversalOrder> {
     hour12: true,
   });
 
-  const estDate = o.estimated_delivery
-    ? new Date(o.estimated_delivery)
-    : new Date(createdDate.getTime() + 4 * 24 * 60 * 60 * 1000);
-  const estimated_delivery = `${estDate.toLocaleDateString('en-IN', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  })}, by 6:00 PM`;
+  const estimated_delivery = o.estimated_delivery
+    ? new Date(o.estimated_delivery).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    : undefined;
 
   const cust = o.customer_info || {};
   const full_address = [cust.address, cust.pincode].filter(Boolean).join(', ');
@@ -200,14 +193,8 @@ async function formatOrderResult(o: any): Promise<FormattedUniversalOrder> {
     status_label,
     status_color,
     status_bg,
-    customer: {
-      name: cust.name || 'RenewX Customer',
-      phone: cust.phone || '',
-      email: cust.email || '',
-      address: cust.address || '',
-      pincode: cust.pincode || '',
-      full_address,
-    },
+    // Public tracking must never disclose a customer's personal contact or delivery address.
+    customer: { name: 'RenewX Customer', phone: '', address: '', pincode: '', full_address: '' },
     time: {
       placed_at: createdDate.toISOString(),
       formatted_date,
@@ -224,12 +211,11 @@ async function formatOrderResult(o: any): Promise<FormattedUniversalOrder> {
       payment_status: o.payment_status || 'paid',
     },
     logistics: {
-      courier: o.courier || (rawStatus === 'shipped' || rawStatus === 'out_for_delivery' || rawStatus === 'delivered' ? 'BlueDart Express' : undefined),
-      courier_phone: o.courier_phone || (o.courier ? '+91 1800 209 1234' : undefined),
-      tracking_number: o.tracking_number || (rawStatus === 'shipped' || rawStatus === 'out_for_delivery' || rawStatus === 'delivered' ? `BD-${cleanId.slice(-6).toUpperCase()}` : undefined),
+      courier: o.courier || undefined,
+      courier_phone: undefined,
+      tracking_number: o.tracking_number || undefined,
       estimated_delivery,
     },
-    raw_order: o,
   };
 }
 
@@ -291,14 +277,8 @@ function formatSellResult(sr: any): FormattedUniversalSell {
     status_label,
     status_color,
     status_bg,
-    customer: {
-      name: sr.customer_name || 'Seller',
-      phone: sr.customer_phone || '',
-      email: sr.customer_email || '',
-      address: sr.address || '',
-      pincode: sr.pincode || '',
-      full_address,
-    },
+    // Public sell tracking exposes status only, never seller identity or pickup details.
+    customer: { name: 'RenewX Seller', phone: '', address: '', pincode: '', full_address: '' },
     time: {
       created_at: createdDate.toISOString(),
       formatted_date,
@@ -310,22 +290,20 @@ function formatSellResult(sr: any): FormattedUniversalSell {
       brand: sr.brand || 'Device',
       model: sr.model || '',
       storage: sr.storage || 'Standard',
-      condition: sr.condition || {},
-      photos: Array.isArray(sr.photos) ? sr.photos : [],
+      condition: {},
+      photos: [],
     },
     valuation: {
       valuation_amount: Number(sr.valuation_amount || sr.expected_price || 0),
       approved_amount: sr.approved_amount ? Number(sr.approved_amount) : undefined,
       expected_price: sr.expected_price ? Number(sr.expected_price) : undefined,
-      admin_note: sr.admin_note || '',
     },
     logistics: {
-      executive_name: sr.assigned_executive || (rawStatus === 'scheduled' || rawStatus === 'picked_up' ? 'RenewX Inspection Specialist' : undefined),
-      executive_phone: sr.executive_phone || (rawStatus === 'scheduled' ? '+91 90801 68778' : undefined),
-      address: sr.address || '',
-      pincode: sr.pincode || '',
+      executive_name: sr.assigned_executive || undefined,
+      executive_phone: undefined,
+      address: '',
+      pincode: '',
     },
-    raw_trade_in: sr,
   };
 }
 
@@ -378,7 +356,6 @@ export async function universalTrackLookup(req: Request, res: Response, next: Ne
           { $expr: { $regexMatch: { input: { $toString: '$_id' }, regex: `${escapedClean}$`, options: 'i' } } },
           { $expr: { $regexMatch: { input: { $toString: '$_id' }, regex: escapedClean, options: 'i' } } },
           { tracking_number: { $regex: new RegExp(escapedClean, 'i') } },
-          { 'customer_info.phone': { $regex: new RegExp(escapedClean, 'i') } },
         ],
       }).sort({ created_at: -1 }).lean();
 
@@ -395,7 +372,6 @@ export async function universalTrackLookup(req: Request, res: Response, next: Ne
         $or: [
           { $expr: { $regexMatch: { input: { $toString: '$_id' }, regex: `${escapedClean}$`, options: 'i' } } },
           { $expr: { $regexMatch: { input: { $toString: '$_id' }, regex: escapedClean, options: 'i' } } },
-          { customer_phone: { $regex: new RegExp(escapedClean, 'i') } },
         ],
       }).sort({ created_at: -1 }).lean();
 
