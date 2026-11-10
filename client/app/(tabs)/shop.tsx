@@ -63,7 +63,7 @@ export default function ShopScreen() {
           </Pressable>
         )}
       </View> : null}
-      <View style={styles.resultsHeader}><Text style={styles.sectionTitle}>Available devices</Text><Text style={styles.count}>{productsQuery.data?.pagination?.total ?? "—"} listings</Text></View>
+      <View style={styles.resultsHeader}><Text style={styles.sectionTitle}>Available devices</Text><Text style={styles.count}>{productsQuery.data?.total ?? "—"} listings</Text></View>
       {productsQuery.isPending ? <View style={styles.status}><ActivityIndicator color={colors.navy}/><Text style={styles.statusText}>Loading the live catalogue…</Text></View>
       : productsQuery.isError ? <View style={styles.emptyCard}>
         <StateMessage title="Couldn't load products" description={productsQuery.error instanceof Error ? productsQuery.error.message : "Please check your connection and try again."}/>
@@ -74,15 +74,15 @@ export default function ShopScreen() {
         <StateMessage title={query.trim() ? "No matching devices" : "No devices available yet"} description="Try another search or category. New listings will appear here when they are published."/>
         <Pressable onPress={() => {setQuery("");setActiveCategory("All");setSort("recommended");}} style={styles.resetButton}><Text style={styles.resetText}>Clear filters</Text></Pressable>
       </View>
-      : <View style={styles.grid}>{products.map(product => <ProductCard key={product._id} product={product}/>)}</View>}
+      : <View style={styles.grid}>{products.map(product => <ProductCard key={product.id || product._id} product={product}/>)}</View>}
     </Screen>
   );
 }
 
 function ProductCard({product}:{product:Product}) {
-  return <Pressable onPress={() => router.push({pathname:"/product/[id]",params:{id:product._id}})} style={styles.productCard}>
-    {product.images?.[0] ? <Image source={{uri:product.images[0]}} style={styles.productImage} resizeMode="contain"/> : <View style={styles.imageFallback}><Ionicons name="phone-portrait-outline" size={36} color={colors.muted}/></View>}
-    <View style={styles.productInfo}><Text numberOfLines={1} style={styles.productName}>{product.name}</Text><Text style={styles.productCategory}>{product.category}</Text><Text style={styles.price}>₹{product.price.toLocaleString("en-IN")}</Text><Text style={styles.stock}>{product.stock > 0 ? "In stock" : "Out of stock"}</Text></View>
+  return <Pressable onPress={() => router.push({pathname:"/product/[id]",params:{id:product.id || product._id || ""}})} style={styles.productCard}>
+    {(product.image_url || product.images?.[0]) ? <Image source={{uri:product.image_url || product.images?.[0] || ""}} style={styles.productImage} resizeMode="contain"/> : <View style={styles.imageFallback}><Ionicons name="phone-portrait-outline" size={36} color={colors.muted}/></View>}
+    <View style={styles.productInfo}><Text numberOfLines={1} style={styles.productName}>{product.name}</Text><Text style={styles.productCategory}>{product.category}{product.condition ? " · "+product.condition : ""}</Text><Text style={styles.price}>₹{product.price.toLocaleString("en-IN")}</Text><Text style={styles.stock}>{product.stock > 0 ? "In stock" : "Out of stock"}</Text></View>
   </Pressable>;
 }
 
