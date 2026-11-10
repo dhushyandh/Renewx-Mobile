@@ -1,8 +1,0 @@
-import { Text, View } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
-import { colors } from '../../src/theme';
-
-export default function ProductDetailsScreen() {
-  const { id } = useLocalSearchParams();
-  return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: colors.white }}><Text style={{ color: colors.navy, fontWeight: '700' }}>Product details</Text><Text style={{ color: colors.muted, marginTop: 8 }}>Product ID: {String(id || '')}</Text></View>;
-}
