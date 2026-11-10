@@ -1,28 +1,7 @@
 # API Contract
 
-No endpoint paths are assumed in this scaffold.
+Status: not yet verified. The existing RenewX backend source and API documentation have not yet been inspected.
 
-Before storefront implementation, document each verified endpoint with:
-- HTTP method and path.
-- Authentication requirements.
-- Query/body schema.
-- Response schema.
-- Pagination conventions.
-- Error formats and status codes.
-- Image URL behavior.
-- Rate limits or operational constraints.
+Reuse the existing Express/MongoDB backend and authentication provider. Record real endpoint paths, auth mechanism, request/response DTOs and error shapes here before connecting screens. Never invent routes or payloads. Keep secrets out of source control and out of EXPO_PUBLIC variables. Server-side prices, stock, discounts, totals and order state are authoritative.
 
-Required domains:
-1. Authentication and session.
-2. Products and product details.
-3. Categories.
-4. Search, filters and sorting.
-5. Wishlist.
-6. Cart.
-7. Address book.
-8. Checkout and payment.
-9. Orders and tracking.
-10. Sell/upgrade submissions.
-11. Profile and support.
-
-Use sanitized real responses from the existing backend. Never place real customer data or tokens in this document.
+Required endpoint groups: auth/session, categories, products/search/filters, wishlist, cart, checkout/payment, orders/tracking, sell requests, profile and addresses.
