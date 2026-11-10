@@ -23,6 +23,7 @@ export default function RootLayout() {
     if (!user && !inAuth) router.replace("/(auth)/login");
     else if (user && inAuth) router.replace(user.profile_completed ? "/(tabs)" : "/onboarding");
     else if (user && !user.profile_completed && !inOnboarding) router.replace("/onboarding");
+    else if (user && user.profile_completed && inOnboarding) router.replace("/(tabs)");
 
   }, [ready, user, segments, router]);
   return <SafeAreaProvider><QueryClientProvider client={queryClient}><StatusBar style="dark" backgroundColor={colors.white}/><Stack screenOptions={{headerShown:false,contentStyle:{backgroundColor:colors.white}}}/><CookieConsent/></QueryClientProvider></SafeAreaProvider>;
