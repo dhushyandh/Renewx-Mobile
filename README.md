@@ -22,6 +22,15 @@ npm run dev
 npm run dev:server
 ```
 
+## Verify the workspace
+```bash
+npm run typecheck
+npm run test:server
+npm run build:client
+```
+
+`build:client` exports the Expo web build. Android/iOS native builds still require the appropriate local or EAS build environment.
+
 Copy `client/.env.example` to `client/.env` and set `EXPO_PUBLIC_API_URL`.
 Copy `server/.env.example` to `server/.env` and configure MongoDB, JWT, email, storage and payment settings.
 
