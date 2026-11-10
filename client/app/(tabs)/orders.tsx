@@ -1,35 +1,10 @@
-import { StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import Screen from '../../src/components/Screen';
-import StateMessage from '../../src/components/StateMessage';
-import { colors, radius, spacing } from '../../src/theme';
-
-export default function OrdersScreen() {
-  return <Screen contentContainerStyle={styles.page}>
-    <View style={styles.header}>
-      <Text style={styles.eyebrow}>YOUR RENEWX ACTIVITY</Text>
-      <Text style={styles.title}>My orders</Text>
-      <Text style={styles.subtitle}>Follow purchases and delivery updates in one place.</Text>
-    </View>
-    <View style={styles.tabs}>
-      <View style={styles.tabActive}><Text style={styles.tabActiveText}>All orders</Text></View>
-      <View style={styles.tab}><Text style={styles.tabText}>In progress</Text></View>
-      <View style={styles.tab}><Text style={styles.tabText}>Completed</Text></View>
-    </View>
-    <View style={styles.emptyCard}>
-      <View style={styles.icon}><Ionicons name="receipt-outline" size={30} color={colors.navy}/></View>
-      <StateMessage title="No orders yet" description="When you place an order, its status, delivery progress and order details will appear here."/>
-    </View>
-  </Screen>;
-}
-const styles=StyleSheet.create({
- page:{paddingTop:spacing.lg,gap:spacing.lg,flexGrow:1},
- header:{gap:6},eyebrow:{color:colors.muted,fontSize:10,fontWeight:'800',letterSpacing:1.2},
- title:{color:colors.navy,fontSize:26,fontWeight:'900'},subtitle:{color:colors.muted,fontSize:14,lineHeight:21},
- tabs:{flexDirection:'row',gap:8},
- tabActive:{paddingHorizontal:14,paddingVertical:10,borderRadius:radius.pill,backgroundColor:colors.navy},
- tab:{paddingHorizontal:14,paddingVertical:10,borderRadius:radius.pill,backgroundColor:colors.cloud},
- tabActiveText:{color:colors.white,fontSize:12,fontWeight:'800'},tabText:{color:colors.muted,fontSize:12,fontWeight:'700'},
- emptyCard:{flex:1,minHeight:300,borderWidth:1,borderColor:colors.border,borderRadius:radius.xl,backgroundColor:colors.white,alignItems:'center',justifyContent:'center',padding:spacing.md,gap:spacing.sm},
- icon:{width:62,height:62,borderRadius:31,backgroundColor:'#FFF7D6',alignItems:'center',justifyContent:'center'}
-});
+import { ActivityIndicator, Pressable, StyleSheet, Text, View, RefreshControl, ScrollView } from "react-native";
+import { router } from "expo-router";
+import { useQuery } from "@tanstack/react-query";
+import { Ionicons } from "@expo/vector-icons";
+import Screen from "../../src/components/Screen";
+import StateMessage from "../../src/components/StateMessage";
+import { commerceApi } from "../../src/services/api/commerce";
+import { colors, radius, spacing } from "../../src/theme";
+export default function OrdersScreen(){const query=useQuery({queryKey:["orders"],queryFn:()=>commerceApi.orders(),retry:1});const orders=query.data?.data||[];return <Screen contentContainerStyle={s.page}><View style={s.header}><Text style={s.eyebrow}>YOUR RENEWX ACTIVITY</Text><Text style={s.title}>My orders</Text><Text style={s.subtitle}>Follow purchases and delivery updates in one place.</Text></View>{query.isPending?<View style={s.center}><ActivityIndicator color={colors.navy}/><Text style={s.muted}>Loading your orders…</Text></View>:query.isError?<View style={s.empty}><StateMessage title="Couldn't load orders" description={query.error instanceof Error?query.error.message:"Check your connection and try again."}/><Pressable onPress={()=>query.refetch()} style={s.button}><Text style={s.buttonText}>Try again</Text></Pressable></View>:orders.length===0?<View style={s.empty}><View style={s.icon}><Ionicons name="receipt-outline" size={30} color={colors.navy}/></View><StateMessage title="No orders yet" description="Your confirmed purchases and delivery progress will appear here."/><Pressable onPress={()=>router.push("/(tabs)/shop")} style={s.button}><Text style={s.buttonText}>Explore devices</Text></Pressable></View>:orders.map((order:any)=>{const id=String(order.id||order._id);return <Pressable key={id} onPress={()=>router.push({pathname:"/orders/[id]",params:{id}})} style={s.order}><View style={s.orderTop}><Text style={s.orderId}>Order #{id.slice(-8).toUpperCase()}</Text><Text style={s.status}>{String(order.status||"pending").replace(/_/g," ")}</Text></View><Text style={s.amount}>₹{Number(order.total_amount||order.subtotal||0).toLocaleString("en-IN")}</Text><Text style={s.date}>{order.created_at?new Date(order.created_at).toLocaleDateString("en-IN"):"Date unavailable"}</Text><Text style={s.details}>View order details  ›</Text></Pressable>})}</Screen>}
+const s=StyleSheet.create({page:{paddingTop:spacing.lg,gap:spacing.lg,flexGrow:1},header:{gap:6},eyebrow:{color:colors.muted,fontSize:10,fontWeight:"800",letterSpacing:1.2},title:{color:colors.navy,fontSize:26,fontWeight:"900"},subtitle:{color:colors.muted,fontSize:14,lineHeight:21},center:{minHeight:220,alignItems:"center",justifyContent:"center",gap:10},muted:{color:colors.muted},empty:{flex:1,minHeight:280,alignItems:"center",justifyContent:"center",padding:spacing.md,gap:12,borderWidth:1,borderColor:colors.border,borderRadius:radius.xl},icon:{width:62,height:62,borderRadius:31,backgroundColor:"#FFF7D6",alignItems:"center",justifyContent:"center"},button:{backgroundColor:colors.yellow,paddingHorizontal:20,paddingVertical:12,borderRadius:radius.pill},buttonText:{color:colors.navy,fontWeight:"900"},order:{padding:16,borderWidth:1,borderColor:colors.border,borderRadius:radius.lg,gap:8},orderTop:{flexDirection:"row",justifyContent:"space-between",alignItems:"center"},orderId:{color:colors.navy,fontWeight:"900"},status:{color:colors.success,fontWeight:"800",fontSize:12,textTransform:"capitalize"},amount:{color:colors.navy,fontWeight:"900",fontSize:20},date:{color:colors.muted,fontSize:12},details:{color:colors.navy,fontSize:12,fontWeight:"800"}});
