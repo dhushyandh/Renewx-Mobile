@@ -4,6 +4,7 @@ import {
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 import Screen from "../../src/components/Screen";
 import { commerceApi, type CatalogBrand, type CatalogModel } from "../../src/services/api/commerce";
 import { useAuthStore } from "../../src/stores/authStore";
@@ -153,11 +154,14 @@ export default function SellScreen() {
     setStep(1); setCategory("Smartphone"); setQuote(null); setPhotos([]); setRequestId(""); setError("");
   };
 
+  if (!user) return <Screen contentContainerStyle={s.page}><View style={s.card}><Text style={s.sectionTitle}>Sign in to sell your device</Text><Text style={s.help}>Your sell request, valuation and pickup updates are linked to your RenewX account.</Text><Pressable onPress={() => router.push("/(auth)/login")} style={s.primaryButton}><Text style={s.primaryText}>Sign in</Text></Pressable></View></Screen>;
+
   return <Screen contentContainerStyle={s.page}>
     <View style={s.header}>
       <Text style={s.eyebrow}>GIVE YOUR DEVICE A NEW LIFE</Text>
       <Text style={s.title}>Sell with RenewX</Text>
       <Text style={s.subtitle}>Complete these 8 quick steps to get an estimate and request a pickup.</Text>
+      <Pressable onPress={() => router.push("/sell-requests")} style={s.requestsLink}><Ionicons name="clipboard-outline" size={17} color={colors.navy}/><Text style={s.requestsLinkText}>Track my sell requests</Text><Ionicons name="arrow-forward" size={15} color={colors.navy}/></Pressable>
     </View>
     {step <= 8 && <View style={s.progressCard}>
       <View style={s.progressTop}><Text style={s.progressLabel}>STEP {step} OF 8</Text><Text style={s.progressLabel}>{Math.round(progress * 100)}%</Text></View>
@@ -223,6 +227,8 @@ export default function SellScreen() {
 
 const s = StyleSheet.create({
   page: { paddingTop: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.md, flexGrow: 1 },
+  requestsLink: { alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 7, paddingVertical: 8 },
+  requestsLinkText: { color: colors.navy, fontSize: 12, fontWeight: "900" },
   header: { gap: 6 }, eyebrow: { color: colors.muted, fontSize: 10, fontWeight: "800", letterSpacing: 1.2 },
   title: { color: colors.navy, fontSize: 26, fontWeight: "900" }, subtitle: { color: colors.muted, fontSize: 14, lineHeight: 21 },
   progressCard: { padding: spacing.md, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, gap: 9 },
