@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { Platform } from "react-native";
 import { AuthUser, authApi } from "../services/api/auth";
 import { loadAccessToken, setAccessToken } from "../services/api/client";
 
@@ -20,7 +21,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   initialize: async () => {
     try {
       const token = await loadAccessToken();
-      if (token || typeof document !== "undefined") {
+      if (token || Platform.OS === "web") {
         try { set({ user: await authApi.me() }); }
         catch { await setAccessToken(null); set({ user: null }); }
       }
