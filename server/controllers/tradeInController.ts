@@ -76,23 +76,6 @@ export async function createPickupRequest(req: AuthenticatedRequest, res: Respon
     const model = (payload.model || rawBody.selectedModel || 'Device').trim();
     const storage = (payload.storage || 'Standard').trim();
 
-    if (!/^\\d{10}$/.test(customerPhone) || address.length < 8 || address.length > 500 || !/^\\d{6}$/.test(pincode)) {
-      res.status(400).json({ success: false, error: { message: 'A valid 10-digit phone, complete pickup address and 6-digit PIN code are required.', code: 'INVALID_PICKUP_DETAILS' } });
-      return;
-    }
-    if (!category || category.length > 60 || !brand || brand.length > 100 || !model || model.length > 120 || !storage || storage.length > 40) {
-      res.status(400).json({ success: false, error: { message: 'Valid device category, brand, model and variant are required.', code: 'INVALID_DEVICE_DETAILS' } });
-      return;
-    }
-    if (!Number.isFinite(quoteAmount) || quoteAmount <= 0 || quoteAmount > 10000000) {
-      res.status(400).json({ success: false, error: { message: 'A valid estimated device value is required.', code: 'INVALID_VALUATION' } });
-      return;
-    }
-    if (photosList.length > 4 || photosList.some((photo) => !/^https:\\/\\//i.test(photo))) {
-      res.status(400).json({ success: false, error: { message: 'Attach up to four uploaded photo URLs.', code: 'INVALID_PHOTOS' } });
-      return;
-    }
-
     const candidates: string[] = [];
     if (Array.isArray(payload.photos)) {
       candidates.push(...payload.photos);
