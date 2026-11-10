@@ -2,7 +2,7 @@
 
 Backend repository inspected: https://github.com/dhushyandh/RenewX-Crew (branch: master).
 
-The mobile app must use the existing Express/MongoDB backend and Clerk authentication. Authenticated requests use `Authorization: Bearer <Clerk session token>`. Never put Clerk secret keys or other server secrets in the mobile app. Server-side prices, stock, payment verification, totals, order state and admin authorization remain authoritative.
+The mobile app uses first-party email/password authentication backed by MongoDB, bcrypt password hashes, short-lived JWT access tokens and rotating JWT refresh tokens. Native apps store access/refresh tokens with Expo SecureStore and send access tokens as Bearer credentials. Web uses httpOnly access/refresh cookies plus an in-memory access token. Never put JWT secrets in the app. Server-side prices, stock, payment verification, totals, order state and admin authorization remain authoritative.
 
 ## Verified endpoints
 
