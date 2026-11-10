@@ -8,7 +8,7 @@ import StateMessage from "../../src/components/StateMessage";
 import { commerceApi, Product } from "../../src/services/api/commerce";
 import { colors, radius, spacing } from "../../src/theme";
 
-const categories = ["All", "Phones", "Laptops", "Tablets", "Audio", "Wearables", "Accessories", "Gaming", "Monitors"];
+const categories = ["All", "SMARTPHONES", "LAPTOPS", "TABLETS", "AUDIO", "WEARABLES", "ACCESSORIES", "GAMING", "MONITORS"];
 
 export default function ShopScreen() {
   const params = useLocalSearchParams<{ category?: string }>();
@@ -51,7 +51,7 @@ export default function ShopScreen() {
         {categories.map(category => {
           const selected = activeCategory === category;
           return <Pressable key={category} onPress={() => setActiveCategory(category)} style={[styles.chip, selected && styles.chipActive]}>
-            <Text style={[styles.chipText, selected && styles.chipTextActive]}>{category === "All" ? "All devices" : category}</Text>
+            <Text style={[styles.chipText, selected && styles.chipTextActive]}>{category === "All" ? "All devices" : category.charAt(0) + category.slice(1).toLowerCase()}</Text>
           </Pressable>;
         })}
       </ScrollView>
