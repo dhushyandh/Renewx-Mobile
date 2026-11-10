@@ -15,6 +15,9 @@ type AuthState = {
   refreshProfile: () => Promise<void>;
 };
 
+// Prevent an older in-flight request from restoring a session after logout
+// or overwriting a newer login.
+let authRevision = 0;
 let initialization: Promise<void> | null = null;
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -26,23 +29,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (get().ready) return;
     if (initialization) return initialization;
 
+    const revision = authRevision;
     initialization = (async () => {
       try {
         const token = await loadAccessToken();
         if (token || Platform.OS === "web") {
-          try {
-            const user = await authApi.me();
-            set({ user });
-          } catch {
-            await setAccessToken(null);
-            set({ user: null });
-            queryClient.clear();
-          }
+          const user = await authApi.me();
+          if (revision === authRevision) set({ user });
         }
       } catch {
-        await setAccessToken(null).catch(() => undefined);
-        set({ user: null });
-        queryClient.clear();
+        if (revision === authRevision) {
+          await setAccessToken(null).catch(() => undefined);
+          set({ user: null });
+          queryClient.clear();
+        }
       } finally {
         set({ ready: true });
         initialization = null;
@@ -53,28 +53,34 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   login: async (email, password) => {
+    const revision = ++authRevision;
     set({ busy: true });
     try {
       const user = await authApi.login(email, password);
+      if (revision !== authRevision) return;
       queryClient.clear();
       set({ user });
     } finally {
-      set({ busy: false });
+      if (revision === authRevision) set({ busy: false });
     }
   },
 
   register: async (name, email, password) => {
+    const revision = ++authRevision;
     set({ busy: true });
     try {
       const user = await authApi.register(name, email, password);
+      if (revision !== authRevision) return;
       queryClient.clear();
       set({ user });
     } finally {
-      set({ busy: false });
+      if (revision === authRevision) set({ busy: false });
     }
   },
 
   logout: async () => {
+    ++authRevision;
+    set({ busy: true });
     try {
       await authApi.logout();
     } finally {
@@ -85,8 +91,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   refreshProfile: async () => {
+    const revision = authRevision;
     const user = await authApi.me();
-    set({ user });
-    return;
+    if (revision === authRevision) set({ user });
   },
 }));
