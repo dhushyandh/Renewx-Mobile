@@ -1,0 +1,17 @@
+{
+  "name": "renewx-mobile-workspace",
+  "private": true,
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev": "npm run start --workspace client",
+    "dev:server": "npm run dev --workspace server",
+    "build:client": "npm run build --workspace client",
+    "typecheck:server": "npm run typecheck --workspace server"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
