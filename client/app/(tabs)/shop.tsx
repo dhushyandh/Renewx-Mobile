@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View, RefreshControl } from "react-native";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import Screen from "../../src/components/Screen";
@@ -17,17 +17,23 @@ export default function ShopScreen() {
   const [sort, setSort] = useState<"recommended" | "low" | "high">("recommended");
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const productsQuery = useQuery({
+  useEffect(() => {
+    if (params.category) setActiveCategory(params.category);
+  }, [params.category]);
+
+  const productsQuery = useInfiniteQuery({
     queryKey: ["products", activeCategory, query.trim()],
-    queryFn: () => commerceApi.products({
-      page: 1, limit: 30,
+    initialPageParam: 1,
+    queryFn: ({ pageParam }) => commerceApi.products({
+      page: pageParam, limit: 24,
       ...(activeCategory !== "All" ? { category: activeCategory } : {}),
       ...(query.trim() ? { search: query.trim() } : {}),
     }),
+    getNextPageParam: (lastPage) => lastPage.page < lastPage.totalPages ? lastPage.page + 1 : undefined,
   });
 
   const products = useMemo(() => {
-    const list = [...(productsQuery.data?.data || [])];
+    const list = [...(productsQuery.data?.pages.flatMap(page => page.data) || [])];
     if (sort === "low") list.sort((a, b) => a.price - b.price);
     if (sort === "high") list.sort((a, b) => b.price - a.price);
     return list;
@@ -64,7 +70,7 @@ export default function ShopScreen() {
           </Pressable>
         )}
       </View> : null}
-      <View style={styles.resultsHeader}><Text style={styles.sectionTitle}>Available devices</Text><Text style={styles.count}>{productsQuery.data?.total ?? "—"} listings</Text></View>
+      <View style={styles.resultsHeader}><Text style={styles.sectionTitle}>Available devices</Text><Text style={styles.count}>{productsQuery.data?.pages[0]?.total ?? "—"} listings</Text></View>
       {productsQuery.isPending ? <View style={styles.status}><ActivityIndicator color={colors.navy}/><Text style={styles.statusText}>Loading the live catalogue…</Text></View>
       : productsQuery.isError ? <View style={styles.emptyCard}>
         <StateMessage title="Couldn't load products" description={productsQuery.error instanceof Error ? productsQuery.error.message : "Please check your connection and try again."}/>
@@ -75,7 +81,7 @@ export default function ShopScreen() {
         <StateMessage title={query.trim() ? "No matching devices" : "No devices available yet"} description="Try another search or category. New listings will appear here when they are published."/>
         <Pressable onPress={() => {setQuery("");setActiveCategory("All");setSort("recommended");}} style={styles.resetButton}><Text style={styles.resetText}>Clear filters</Text></Pressable>
       </View>
-      : <View style={styles.grid}>{products.map(product => <ProductCard key={product.id || product._id} product={product}/>)}</View>}
+      : <><View style={styles.grid}>{products.map(product => <ProductCard key={product.id || product._id} product={product}/>)}</View>{productsQuery.hasNextPage ? <Pressable disabled={productsQuery.isFetchingNextPage} onPress={() => productsQuery.fetchNextPage()} style={styles.loadMore}>{productsQuery.isFetchingNextPage ? <ActivityIndicator color={colors.navy}/> : <Text style={styles.resetText}>Load more devices</Text>}</Pressable> : null}{productsQuery.isFetchNextPageError ? <Pressable onPress={() => productsQuery.fetchNextPage()} style={styles.loadMore}><Text style={styles.resetText}>Could not load more · Retry</Text></Pressable> : null}</>}
     </Screen>
   );
 }
@@ -109,6 +115,7 @@ const styles=StyleSheet.create({
  status:{minHeight:180,alignItems:"center",justifyContent:"center",gap:12},statusText:{color:colors.muted,fontSize:13},
  emptyCard:{borderWidth:1,borderColor:colors.border,borderRadius:radius.xl,padding:spacing.md,backgroundColor:colors.white,alignItems:"center",gap:spacing.sm,minHeight:250,justifyContent:"center"},
  emptyIcon:{width:62,height:62,borderRadius:31,backgroundColor:"#FFF7D6",alignItems:"center",justifyContent:"center"},
+ loadMore:{minHeight:46,alignItems:"center",justifyContent:"center",borderRadius:radius.pill,backgroundColor:colors.yellow,marginTop:8},
  resetButton:{borderRadius:radius.pill,backgroundColor:colors.yellow,paddingHorizontal:18,paddingVertical:11,marginTop:4},resetText:{color:colors.navy,fontSize:12,fontWeight:"800"},
  grid:{flexDirection:"row",flexWrap:"wrap",gap:12},
  productCard:{width:"48%",borderWidth:1,borderColor:colors.border,borderRadius:radius.lg,backgroundColor:colors.white,overflow:"hidden"},
