@@ -7,6 +7,7 @@ export class ApiError extends Error {
 }
 const API_URL = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, "");
 const TOKEN_KEY = "renewx_access_token";
+const REFRESH_KEY = "renewx_refresh_token";
 let accessToken: string | null = null;
 
 export const setAccessToken = async (token: string | null) => {
@@ -16,6 +17,13 @@ export const setAccessToken = async (token: string | null) => {
     else await SecureStore.deleteItemAsync(TOKEN_KEY);
   }
 };
+export const setRefreshToken = async (token: string | null) => {
+  if (Platform.OS !== "web") {
+    if (token) await SecureStore.setItemAsync(REFRESH_KEY, token);
+    else await SecureStore.deleteItemAsync(REFRESH_KEY);
+  }
+};
+export const loadRefreshToken = async () => Platform.OS === "web" ? null : SecureStore.getItemAsync(REFRESH_KEY);
 export const loadAccessToken = async () => {
   if (Platform.OS !== "web") accessToken = await SecureStore.getItemAsync(TOKEN_KEY);
   return accessToken;
@@ -30,6 +38,7 @@ export async function request<T>(path: string, options: ApiRequestOptions = {}):
     headers: {
       Accept: "application/json",
       ...(options.body !== undefined ? { "Content-Type": "application/json" } : {}),
+      ...(Platform.OS !== "web" ? { "X-Client-Platform": "native" } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
     },
