@@ -68,7 +68,7 @@ export async function createPickupRequest(req: AuthenticatedRequest, res: Respon
       rawBody.zip ||
       address.match(/\b\d{6}\b/)?.[0] ||
       req.user.pincode ||
-      '600001'
+      ''
     ).toString().trim();
 
     const category = (payload.category || rawBody.categoryParam || 'Smartphone').trim();
@@ -128,6 +128,23 @@ export async function createPickupRequest(req: AuthenticatedRequest, res: Respon
       payload.valuationAmount ||
       0
     );
+
+    if (!/^\\d{10}$/.test(customerPhone) || address.length < 8 || address.length > 500 || !/^\\d{6}$/.test(pincode)) {
+      res.status(400).json({ success: false, error: { message: 'A valid 10-digit phone, complete pickup address and 6-digit PIN code are required.', code: 'INVALID_PICKUP_DETAILS' } });
+      return;
+    }
+    if (!category || category.length > 60 || !brand || brand.length > 100 || !model || model.length > 120 || !storage || storage.length > 40) {
+      res.status(400).json({ success: false, error: { message: 'Valid device category, brand, model and variant are required.', code: 'INVALID_DEVICE_DETAILS' } });
+      return;
+    }
+    if (!Number.isFinite(quoteAmount) || quoteAmount <= 0 || quoteAmount > 10000000) {
+      res.status(400).json({ success: false, error: { message: 'A valid estimated device value is required.', code: 'INVALID_VALUATION' } });
+      return;
+    }
+    if (photosList.length > 4 || photosList.some((photo) => !/^https:\/\//i.test(photo))) {
+      res.status(400).json({ success: false, error: { message: 'Attach up to four uploaded photo URLs.', code: 'INVALID_PHOTOS' } });
+      return;
+    }
 
     // Auto-register model in catalog database if not already present
     if (model && brand) {
@@ -327,7 +344,6 @@ export async function updateTradeInStatus(
     // Decision can be corrected between approved/rejected. Once pickup starts,
     // the request becomes forward-only and cannot be returned to a decision state.
     const decisionStatuses = new Set(['pending', 'approved', 'rejected']);
-    const lifecycleAfterApproval = new Set(['scheduled', 'picked_up', 'inspected', 'completed', 'cancelled']);
     const canTransition =
       (request.status === 'pending' && (status === 'approved' || status === 'rejected')) ||
       ((request.status === 'approved' || request.status === 'rejected') && status === 'scheduled') ||
