@@ -170,7 +170,7 @@ export default function SellScreen() {
     {step === 2 && <View style={s.card}><Text style={s.sectionTitle}>Choose the brand</Text><Text style={s.help}>Brands are loaded from the RenewX device catalogue.</Text>
       {catalogBusy && brands.length === 0 ? <ActivityIndicator color={colors.navy} /> : null}
       {brands.length > 0 && <View style={s.choices}>{brands.map(item => { const id = String(item._id || item.id || item.name); return <Choice key={id} label={item.name} selected={brandId === id} onPress={() => { setBrandId(id); setBrand(item.name); }} />; })}</View>}
-      <Field label="Brand not listed? Enter it here" value={brandId ? "" : brand} onChangeText={value => { setBrand(value); setBrandId(""); }} placeholder="e.g. Apple" />
+      <Field label="Brand not listed? Enter it here" value={brandId ? "" : brand} onChangeText={(value: string) => { setBrand(value); setBrandId(""); }} placeholder="e.g. Apple" />
       {catalogError ? <Text style={s.inlineError}>{catalogError}</Text> : null}
     </View>}
 
