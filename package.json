@@ -7,9 +7,13 @@
   ],
   "scripts": {
     "dev": "npm run start --workspace client",
+    "dev:client": "npm run start --workspace client",
     "dev:server": "npm run dev --workspace server",
-    "build:client": "npm run build --workspace client",
-    "typecheck:server": "npm run typecheck --workspace server"
+    "typecheck:client": "npm run typecheck --workspace client",
+    "typecheck:server": "npm run typecheck --workspace server",
+    "typecheck": "npm run typecheck:client && npm run typecheck:server",
+    "build:client": "npm run export:web --workspace client",
+    "test:server": "npm run test --workspace server"
   },
   "engines": {
     "node": ">=22"
