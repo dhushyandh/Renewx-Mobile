@@ -1,0 +1,6 @@
+import { Text, View } from 'react-native';
+import { colors } from '../../src/theme';
+
+export default function OrdersScreen() {
+  return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.white }}><Text style={{ color: colors.navy, fontWeight: '700' }}>Your orders</Text></View>;
+}
