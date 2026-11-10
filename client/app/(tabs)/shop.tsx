@@ -22,24 +22,20 @@ export default function ShopScreen() {
   }, [params.category]);
 
   const productsQuery = useInfiniteQuery({
-    queryKey: ["products", activeCategory, query.trim()],
+    queryKey: ["products", activeCategory, query.trim(), sort],
     initialPageParam: 1,
     queryFn: ({ pageParam }) => commerceApi.products({
       page: pageParam, limit: 24,
       ...(activeCategory !== "All" ? { category: activeCategory } : {}),
       ...(query.trim() ? { search: query.trim() } : {}),
+      ...(sort === "low" ? { sort: "price_asc" } : sort === "high" ? { sort: "price_desc" } : {}),
     }),
     getNextPageParam: (lastPage) => lastPage.page < lastPage.totalPages ? lastPage.page + 1 : undefined,
   });
 
   const loadNextPage = () => productsQuery.fetchNextPage();
 
-  const products = useMemo(() => {
-    const list = [...(productsQuery.data?.pages.flatMap(page => page.data) || [])];
-    if (sort === "low") list.sort((a, b) => a.price - b.price);
-    if (sort === "high") list.sort((a, b) => b.price - a.price);
-    return list;
-  }, [productsQuery.data, sort]);
+  const products = useMemo(() => productsQuery.data?.pages.flatMap(page => page.data) || [], [productsQuery.data]);
 
   return (
     <Screen contentContainerStyle={styles.page} refreshControl={<RefreshControl refreshing={productsQuery.isRefetching} onRefresh={() => productsQuery.refetch()} tintColor={colors.navy} />}>
