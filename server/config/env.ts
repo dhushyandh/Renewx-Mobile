@@ -1,0 +1,55 @@
+import dotenv from 'dotenv';
+import path from 'path';
+
+const projectRoot = path.basename(process.cwd()) === 'server' ? path.resolve(process.cwd(), '..') : process.cwd();
+
+dotenv.config({ path: path.join(projectRoot, '.env') });
+dotenv.config({ path: path.join(projectRoot, 'server', '.env') });
+
+const required = (name: string): string => {
+  const value = process.env[name]?.trim();
+  if (!value) throw new Error(`Missing required environment variable: ${name}`);
+  return value;
+};
+
+const optional = (name: string): string => process.env[name]?.trim() || '';
+
+const parsePort = (value: string | undefined): number => {
+  const port = Number(value || 5000);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error('PORT must be an integer between 1 and 65535');
+  }
+  return port;
+};
+
+const parseCorsOrigins = (value: string | undefined): string[] => {
+  if (!value || value.trim() === '*') return ['*'];
+  return value.split(',').map((origin) => origin.trim()).filter(Boolean);
+};
+
+export const env = {
+  NODE_ENV: process.env.NODE_ENV?.trim() || 'development',
+  PORT: parsePort(process.env.PORT),
+  CORS_ORIGINS: parseCorsOrigins(process.env.CORS_ORIGIN || process.env.CORS_ORIGINS),
+  MONGODB_URI: required('MONGODB_URI'),
+  JWT_SECRET: required('JWT_SECRET'),
+  JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN?.trim() || '7d',
+  ADMIN_EMAIL: process.env.ADMIN_EMAIL?.trim() || '',
+  GOOGLE_CLIENT_IDS: process.env.GOOGLE_CLIENT_IDS?.trim() || '',
+  RAZORPAY_KEY_ID: optional('RAZORPAY_KEY_ID'),
+  RAZORPAY_KEY_SECRET: optional('RAZORPAY_KEY_SECRET'),
+  RAZORPAY_WEBHOOK_SECRET: optional('RAZORPAY_WEBHOOK_SECRET'),
+  SUPABASE_URL: process.env.SUPABASE_URL?.trim() || process.env.VITE_SUPABASE_URL?.trim() || '',
+  SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY?.trim() || process.env.VITE_SUPABASE_ANON_KEY?.trim() || '',
+  SUPABASE_SERVICE_ROLE_KEY: optional('SUPABASE_SERVICE_ROLE_KEY'),
+  SUPABASE_STORAGE_BUCKET: process.env.SUPABASE_STORAGE_BUCKET?.trim() || 'product-images',
+  FRONTEND_URL: process.env.FRONTEND_URL?.trim() || 'https://renewx.expo.app',
+  VAPID_PUBLIC_KEY: process.env.VAPID_PUBLIC_KEY?.trim() || 'BM8x0O0kwul8vZa6WqY5UgN0SxJXOmCecsFAviuEFQsSN7-k-M2Eg9U8gsIFRfSF2SgbHqr-0nbfF-CVT95AgIQ',
+  VAPID_PRIVATE_KEY: process.env.VAPID_PRIVATE_KEY?.trim() || 'xGdYET2PWEVKgfK4LD1T9iOBPMyLzxOr4TySNaru85U',
+  VAPID_SUBJECT: process.env.VAPID_SUBJECT?.trim() || 'mailto:admin@renewx.com',
+  OPENWA_BASE_URL: optional('OPENWA_BASE_URL') || 'http://localhost:2785',
+  OPENWA_API_KEY: optional('OPENWA_API_KEY'),
+  OPENWA_SESSION_ID: optional('OPENWA_SESSION_ID'),
+};
+
+export const isProduction = env.NODE_ENV === 'production';

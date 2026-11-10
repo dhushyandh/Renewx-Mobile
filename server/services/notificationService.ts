@@ -1,0 +1,1238 @@
+import { NotificationModel } from '../models/Notification';
+import { User } from '../models/User';
+import { ProductModel } from '../models/Product';
+import { WebPushSubscriptionModel } from '../models/WebPushSubscription';
+import { env } from '../config/env';
+import webpush from 'web-push';
+
+if (env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY) {
+  try {
+    webpush.setVapidDetails(
+      env.VAPID_SUBJECT || 'mailto:admin@renewx.com',
+      env.VAPID_PUBLIC_KEY,
+      env.VAPID_PRIVATE_KEY
+    );
+  } catch (err) {
+    console.warn('[Notifications] Web push VAPID init warning:', err);
+  }
+}
+
+const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
+const MAX_BATCH_SIZE = 100;
+
+interface PushPayload {
+  title: string;
+  body: string;
+  data?: Record<string, unknown>;
+}
+
+/**
+ * Validates whether a given token is a valid Expo Push Token.
+ * Follows official Expo SDK logic:
+ * - ExponentPushToken[...] or ExpoPushToken[...] (bracket format)
+ * - EAS push token UUID format: 8-4-4-4-12 hex string
+ */
+export function isExpoPushToken(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const token = value.trim();
+  if (!token || token.length > 256) return false;
+
+  const isBracketFormat =
+    (token.startsWith('ExponentPushToken[') || token.startsWith('ExpoPushToken[')) &&
+    token.endsWith(']') &&
+    token.length > 20;
+
+  const isUuidFormat = /^[a-z\d]{8}-[a-z\d]{4}-[a-z\d]{4}-[a-z\d]{4}-[a-z\d]{12}$/i.test(token);
+
+  return isBracketFormat || isUuidFormat;
+}
+
+async function sendExpoPushMessages(messages: Array<Record<string, unknown>>): Promise<void> {
+  for (let start = 0; start < messages.length; start += MAX_BATCH_SIZE) {
+    const batch = messages.slice(start, start + MAX_BATCH_SIZE);
+
+    try {
+      const headers: Record<string, string> = {
+        Accept: 'application/json',
+        'Accept-encoding': 'gzip, deflate',
+        'Content-Type': 'application/json',
+      };
+
+      const accessToken = process.env.EXPO_ACCESS_TOKEN?.trim();
+      if (accessToken) {
+        headers.Authorization = `Bearer ${accessToken}`;
+      }
+
+      const response = await fetch(EXPO_PUSH_URL, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(batch),
+      });
+
+      if (!response.ok) {
+        console.error('[Notifications] Expo Push Service returned HTTP', response.status);
+        continue;
+      }
+
+      const result = await response.json() as {
+        data?: Array<{ status?: string; details?: { error?: string }; message?: string }>;
+      };
+
+      const tickets = result.data || [];
+      const invalidTokens = tickets
+        .map((ticket, index) => ticket?.details?.error === 'DeviceNotRegistered' ? batch[index]?.to : null)
+        .filter((token): token is string => typeof token === 'string');
+
+      if (invalidTokens.length) {
+        console.warn(`[Notifications] Pruning ${invalidTokens.length} unregistered device token(s)`);
+        await User.updateMany(
+          { push_tokens: { $in: invalidTokens } },
+          { $pull: { push_tokens: { $in: invalidTokens } } }
+        ).exec();
+      }
+
+      const errors = tickets.filter((ticket) => ticket?.status === 'error');
+      if (errors.length) {
+        console.warn('[Notifications] Expo rejected', errors.length, 'push message(s):', errors);
+      } else {
+        console.log(`[Notifications] Expo accepted ${tickets.length} push notification(s) successfully.`);
+      }
+    } catch (error) {
+      console.error('[Notifications] Expo Push Service request failed:', error);
+    }
+  }
+}
+
+export async function createUserNotification(
+  userId: string,
+  payload: {
+    type: string;
+    title: string;
+    body: string;
+    reference_id?: string;
+    reference_type?: string;
+    data?: Record<string, unknown>;
+  }
+): Promise<void> {
+  const cleanUserId = String(userId || '').trim();
+  if (!cleanUserId) {
+    console.warn('[Notifications] Cannot create notification: empty userId');
+    return;
+  }
+
+  // --- De-duplication Guard ---
+  // 1. One-time action de-duplication (e.g. order placed, payment confirmed, sell request submitted)
+  const isOneTimeEvent =
+    payload.title.toLowerCase().includes('order placed') ||
+    payload.title.toLowerCase().includes('payment confirmed') ||
+    payload.title.toLowerCase().includes('sell request submitted');
+
+  if (isOneTimeEvent && payload.reference_id) {
+    const existingOneTime = await NotificationModel.findOne({
+      user_id: cleanUserId,
+      reference_id: String(payload.reference_id),
+      title: payload.title,
+    });
+    if (existingOneTime) {
+      console.log(`[Notifications] Skipping duplicate one-time notification "${payload.title}" for user ${cleanUserId}`);
+      return;
+    }
+  }
+
+  // 2. Time-window de-duplication (last 10 minutes for identical title & body)
+  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+  const existingRecent = await NotificationModel.findOne({
+    user_id: cleanUserId,
+    title: payload.title,
+    body: payload.body,
+    created_at: { $gte: tenMinutesAgo },
+  });
+  if (existingRecent) {
+    console.log(`[Notifications] Skipping duplicate recent notification "${payload.title}" for user ${cleanUserId}`);
+    return;
+  }
+
+  await NotificationModel.create({
+    user_id: cleanUserId,
+    type: payload.type,
+    title: payload.title,
+    body: payload.body,
+    reference_id: payload.reference_id ? String(payload.reference_id) : undefined,
+    reference_type: payload.reference_type,
+  });
+
+  const user = await User.findById(cleanUserId).select('+push_tokens');
+  const rawTokens = user?.push_tokens || [];
+  const tokens = rawTokens.filter(isExpoPushToken);
+
+  if (!tokens.length) {
+    console.log(`[Notifications] In-app notification created for user ${cleanUserId}. Push skipped (no device tokens).`);
+    return;
+  }
+
+  console.log(`[Notifications] Dispatching push notification "${payload.title}" to ${tokens.length} device(s) for user ${cleanUserId}...`);
+
+  await sendExpoPushMessages(
+    tokens.map((to) => ({
+      to,
+      sound: 'default',
+      title: payload.title,
+      body: payload.body,
+      data: payload.data || {},
+      channelId: 'default',
+    }))
+  );
+}
+
+export type NotificationEvent =
+  | {
+    action: 'order_placed';
+    userId: string;
+    orderId: string;
+    subtotal?: number;
+    paymentMethod?: string;
+  }
+  | {
+    action: 'payment_successful';
+    userId: string;
+    orderId: string;
+    subtotal?: number;
+  }
+  | {
+    action: 'order_status_changed';
+    userId: string;
+    orderId: string;
+    status: string;
+    courier?: string;
+    trackingNumber?: string;
+  }
+  | {
+    action: 'order_shipped';
+    userId: string;
+    orderId: string;
+    courier?: string;
+    trackingNumber?: string;
+  }
+  | {
+    action: 'out_for_delivery';
+    userId: string;
+    orderId: string;
+    courier?: string;
+  }
+  | {
+    action: 'order_delivered';
+    userId: string;
+    orderId: string;
+  }
+  | {
+    action: 'order_cancelled';
+    userId: string;
+    orderId: string;
+    reason?: string;
+  }
+  | {
+    action: 'refund_update';
+    userId: string;
+    orderId: string;
+    amount?: number;
+    status?: 'initiated' | 'completed' | 'pending';
+  }
+  | {
+    action: 'trade_in_submitted';
+    userId: string;
+    tradeInId: string;
+    brand?: string;
+    model?: string;
+    valuation?: number;
+  }
+  | {
+    action: 'trade_in_status_changed';
+    userId: string;
+    tradeInId: string;
+    brand?: string;
+    model?: string;
+    status: string;
+  }
+  | {
+    action: 'trade_in_valuation_changed';
+    userId: string;
+    tradeInId: string;
+    brand?: string;
+    model?: string;
+    amount: number;
+  }
+  | {
+    action: 'pickup_scheduled';
+    userId: string;
+    tradeInId: string;
+    brand?: string;
+    model?: string;
+    scheduledDate?: string;
+  }
+  | {
+    action: 'pickup_completed';
+    userId: string;
+    tradeInId: string;
+    brand?: string;
+    model?: string;
+  }
+  | {
+    action: 'account_security_update';
+    userId: string;
+    title?: string;
+    message: string;
+  };
+
+export async function notifyUserEvent(event: NotificationEvent): Promise<void> {
+  try {
+    const user = await User.findById(event.userId).select('notification_preferences');
+    if (!user) {
+      if ('orderId' in event && event.orderId) {
+        setImmediate(async () => {
+          try {
+            const { handleOrderNotificationEvent } = await import('./openwaService');
+            await handleOrderNotificationEvent(event);
+          } catch (waErr: any) {
+            console.error('[Notifications] WhatsApp background dispatch error for guest:', waErr?.message || waErr);
+          }
+        });
+      }
+      return;
+    }
+
+    let type = 'order';
+    let title = '';
+    let body = '';
+    let reference_id: string | undefined;
+    let reference_type: string | undefined;
+    let data: Record<string, unknown> = { screen: 'Notifications' };
+
+    switch (event.action) {
+      // 1. 🛒 Order placed -> Order placed successfully
+      case 'order_placed': {
+        if (user.notification_preferences?.order_updates === false) break;
+        type = 'order';
+        title = 'Order placed successfully';
+        const orderShort = event.orderId.slice(-6).toUpperCase();
+        body = `Your order #${orderShort} has been placed successfully${event.paymentMethod ? ` via ${event.paymentMethod}` : ''}.`;
+        reference_id = event.orderId;
+        reference_type = 'order';
+        data = { screen: 'OrderDetail', orderId: event.orderId };
+        break;
+      }
+
+      // 2. 💳 Payment successful -> Payment confirmed
+      case 'payment_successful': {
+        if (user.notification_preferences?.order_updates === false) break;
+        type = 'order';
+        title = 'Payment confirmed';
+        const orderShort = event.orderId.slice(-6).toUpperCase();
+        const amountStr = event.subtotal ? ` of ₹${Number(event.subtotal).toLocaleString('en-IN')}` : '';
+        body = `Your payment${amountStr} for order #${orderShort} has been confirmed. We are preparing your order.`;
+        reference_id = event.orderId;
+        reference_type = 'order';
+        data = { screen: 'OrderDetail', orderId: event.orderId };
+        break;
+      }
+
+      // 3. 📦 Order status changed -> Order status updated
+      case 'order_status_changed': {
+        if (user.notification_preferences?.order_updates === false) break;
+        type = 'order';
+        title = 'Order status updated';
+        const orderShort = event.orderId.slice(-6).toUpperCase();
+        body = `Your order #${orderShort} is now ${event.status.replace(/_/g, ' ')}.`;
+        reference_id = event.orderId;
+        reference_type = 'order';
+        data = { screen: 'OrderDetail', orderId: event.orderId };
+        break;
+      }
+
+      // 4. 🚚 Order shipped -> Shipment update
+      case 'order_shipped': {
+        if (user.notification_preferences?.order_updates === false) break;
+        type = 'order';
+        title = 'Shipment update';
+        const orderShort = event.orderId.slice(-6).toUpperCase();
+        const courierStr = event.courier ? ` via ${event.courier}` : '';
+        const trackingStr = event.trackingNumber ? ` (Tracking: ${event.trackingNumber})` : '';
+        body = `Your order #${orderShort} has been shipped${courierStr}.${trackingStr}`;
+        reference_id = event.orderId;
+        reference_type = 'order';
+        data = { screen: 'OrderDetail', orderId: event.orderId };
+        break;
+      }
+
+      // 5. 🏠 Out for delivery -> Delivery update
+      case 'out_for_delivery': {
+        if (user.notification_preferences?.order_updates === false) break;
+        type = 'order';
+        title = 'Delivery update';
+        const orderShort = event.orderId.slice(-6).toUpperCase();
+        body = `Your order #${orderShort} is out for delivery today! Our courier executive will contact you shortly.`;
+        reference_id = event.orderId;
+        reference_type = 'order';
+        data = { screen: 'OrderDetail', orderId: event.orderId };
+        break;
+      }
+
+      // 6. ✅ Order delivered -> Order delivered
+      case 'order_delivered': {
+        if (user.notification_preferences?.order_updates === false) break;
+        type = 'order';
+        title = 'Order delivered';
+        const orderShort = event.orderId.slice(-6).toUpperCase();
+        body = `Your order #${orderShort} has been delivered successfully. Thank you for choosing RenewX!`;
+        reference_id = event.orderId;
+        reference_type = 'order';
+        data = { screen: 'OrderDetail', orderId: event.orderId };
+        break;
+      }
+
+      // 7. ❌ Order cancelled -> Order cancelled
+      case 'order_cancelled': {
+        if (user.notification_preferences?.order_updates === false) break;
+        type = 'order';
+        title = 'Order cancelled';
+        const orderShort = event.orderId.slice(-6).toUpperCase();
+        const reasonStr = event.reason ? `: ${event.reason}` : '.';
+        body = `Your order #${orderShort} has been cancelled${reasonStr}`;
+        reference_id = event.orderId;
+        reference_type = 'order';
+        data = { screen: 'OrderDetail', orderId: event.orderId };
+        break;
+      }
+
+      // 8. 💰 Refund initiated/completed -> Refund update
+      case 'refund_update': {
+        if (user.notification_preferences?.order_updates === false) break;
+        type = 'order';
+        title = 'Refund update';
+        const orderShort = event.orderId.slice(-6).toUpperCase();
+        const amountStr = event.amount ? ` ₹${Number(event.amount).toLocaleString('en-IN')}` : '';
+        const statusStr = event.status === 'completed' ? 'processed successfully' : 'initiated';
+        body = `A refund of${amountStr} for order #${orderShort} has been ${statusStr} to your original payment method.`;
+        reference_id = event.orderId;
+        reference_type = 'order';
+        data = { screen: 'OrderDetail', orderId: event.orderId };
+        break;
+      }
+
+      // 9. 📱 Trade-in submitted -> Sell request submitted
+      case 'trade_in_submitted': {
+        if (user.notification_preferences?.sell_request_updates === false) return;
+        type = 'trade_in';
+        title = 'Sell request submitted';
+        const deviceName = [event.brand, event.model].filter(Boolean).join(' ') || 'device';
+        body = `Your sell request for ${deviceName} has been submitted and is awaiting review.`;
+        reference_id = event.tradeInId;
+        reference_type = 'trade_in';
+        data = { screen: 'TradeIn', tradeInId: event.tradeInId };
+        break;
+      }
+
+      // 10. 🔄 Trade-in status changed -> Sell request updated
+      case 'trade_in_status_changed': {
+        if (user.notification_preferences?.sell_request_updates === false) return;
+        type = 'trade_in';
+        title = 'Sell request updated';
+        const deviceName = [event.brand, event.model].filter(Boolean).join(' ') || 'device';
+        body = `Your sell request for ${deviceName} is now ${event.status.replace(/_/g, ' ')}.`;
+        reference_id = event.tradeInId;
+        reference_type = 'trade_in';
+        data = { screen: 'TradeIn', tradeInId: event.tradeInId };
+        break;
+      }
+
+      // 11. 💰 Trade-in valuation/amount changed -> Valuation updated
+      case 'trade_in_valuation_changed': {
+        if (user.notification_preferences?.sell_request_updates === false) return;
+        type = 'trade_in';
+        title = 'Valuation updated';
+        const deviceName = [event.brand, event.model].filter(Boolean).join(' ') || 'device';
+        body = `The valuation for your ${deviceName} has been updated to ₹${Number(event.amount).toLocaleString('en-IN')}.`;
+        reference_id = event.tradeInId;
+        reference_type = 'trade_in';
+        data = { screen: 'TradeIn', tradeInId: event.tradeInId };
+        break;
+      }
+
+      // 12. 📅 Pickup scheduled -> Pickup scheduled
+      case 'pickup_scheduled': {
+        if (user.notification_preferences?.sell_request_updates === false) return;
+        type = 'trade_in';
+        title = 'Pickup scheduled';
+        const deviceName = [event.brand, event.model].filter(Boolean).join(' ') || 'device';
+        const dateStr = event.scheduledDate ? ` for ${event.scheduledDate}` : '';
+        body = `Pickup for your ${deviceName} has been scheduled${dateStr}. Our executive will visit your address.`;
+        reference_id = event.tradeInId;
+        reference_type = 'trade_in';
+        data = { screen: 'TradeIn', tradeInId: event.tradeInId };
+        break;
+      }
+
+      // 13. 📦 Pickup completed -> Device picked up
+      case 'pickup_completed': {
+        if (user.notification_preferences?.sell_request_updates === false) return;
+        type = 'trade_in';
+        title = 'Device picked up';
+        const deviceName = [event.brand, event.model].filter(Boolean).join(' ') || 'device';
+        body = `Your ${deviceName} has been picked up successfully and is being processed for final inspection.`;
+        reference_id = event.tradeInId;
+        reference_type = 'trade_in';
+        data = { screen: 'TradeIn', tradeInId: event.tradeInId };
+        break;
+      }
+
+      // 14. ⚙️ Important account/security event -> Account/security update
+      case 'account_security_update': {
+        type = 'security';
+        title = event.title || 'Account/security update';
+        body = event.message;
+        data = { screen: 'Security' };
+        break;
+      }
+    }
+
+    if (title && body) {
+      await createUserNotification(event.userId, {
+        type,
+        title,
+        body,
+        reference_id,
+        reference_type,
+        data,
+      });
+    }
+
+    // Background dispatch to OpenWA WhatsApp for order events (non-blocking)
+    if ('orderId' in event && event.orderId) {
+      setImmediate(async () => {
+        try {
+          const { handleOrderNotificationEvent } = await import('./openwaService');
+          await handleOrderNotificationEvent(event, user.notification_preferences);
+        } catch (waErr: any) {
+          console.error('[Notifications] WhatsApp background dispatch error:', waErr?.message || waErr);
+        }
+      });
+    }
+  } catch (err) {
+    console.error('[Notifications] Failed to notify user event:', err);
+  }
+}
+
+/**
+ * Resolves a publicly accessible image URL for rich mobile and web push notifications.
+ * Ensures the URL is an absolute HTTPS or HTTP address, avoiding data URIs or private paths.
+ */
+function resolvePublicImageUrl(rawImage?: string): string {
+  if (!rawImage || typeof rawImage !== 'string') return '';
+  const trimmed = rawImage.trim();
+  if (!trimmed || trimmed.startsWith('data:')) return '';
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed;
+  }
+  if (trimmed.startsWith('/')) {
+    return `${env.FRONTEND_URL}${trimmed}`;
+  }
+  return '';
+}
+
+/**
+ * Sends Web Push notifications to active browser subscriptions.
+ * Automatically purges dead or expired endpoints (HTTP 404 or 410 Gone).
+ */
+export async function sendWebPushMessages(
+  subscriptions: Array<{ endpoint: string; keys: { p256dh: string; auth: string } }>,
+  payload: {
+    title: string;
+    body: string;
+    icon?: string;
+    image?: string;
+    badge?: string;
+    data?: Record<string, unknown>;
+  }
+): Promise<void> {
+  if (!subscriptions.length) return;
+  const payloadString = JSON.stringify(payload);
+  const deadEndpoints: string[] = [];
+
+  for (let start = 0; start < subscriptions.length; start += MAX_BATCH_SIZE) {
+    const batch = subscriptions.slice(start, start + MAX_BATCH_SIZE);
+    await Promise.allSettled(
+      batch.map(async (sub) => {
+        try {
+          await webpush.sendNotification(
+            {
+              endpoint: sub.endpoint,
+              keys: {
+                p256dh: sub.keys.p256dh,
+                auth: sub.keys.auth,
+              },
+            },
+            payloadString,
+            {
+              TTL: 60 * 60 * 24, // 24 hours
+              urgency: 'high',
+            }
+          );
+        } catch (err: any) {
+          const status = err?.statusCode;
+          if (status === 404 || status === 410) {
+            deadEndpoints.push(sub.endpoint);
+          } else {
+            console.warn(`[WebPush] Failed push to ${sub.endpoint.slice(0, 35)}...`, err?.message || err);
+          }
+        }
+      })
+    );
+  }
+
+  if (deadEndpoints.length > 0) {
+    try {
+      await WebPushSubscriptionModel.deleteMany({ endpoint: { $in: deadEndpoints } });
+      console.log(`[WebPush] Pruned ${deadEndpoints.length} expired subscription endpoint(s)`);
+    } catch (e) {
+      console.warn('[WebPush] Error pruning expired subscriptions:', e);
+    }
+  }
+}
+
+/**
+ * Broadcasts a real "Product Arrival" rich notification to eligible Android, iOS,
+ * and Web subscribers whenever an admin successfully adds a new product to RenewX.
+ *
+ * Characteristics:
+ * - App icon: RenewX branding
+ * - Title: New arrival: <Product Name>
+ * - Body: Now available for ₹XX,XXX on RenewX.
+ * - Large image: Actual public product image (BigPictureStyle on Android)
+ * - Tap action: Deep links to /product/:id
+ * - Zero emojis, clean and genuine presentation.
+ */
+export async function broadcastNewProductArrival(product: {
+  id: string;
+  name: string;
+  brand?: string;
+  category?: string;
+  price?: number;
+  is_best_price?: boolean;
+  image?: string;
+  images?: string[];
+}): Promise<void> {
+  try {
+    const productIdStr = String(product.id || '').trim();
+    if (!productIdStr) return;
+
+    // Fetch fresh database record if image or pricing is missing
+    let realImage = product.image;
+    let realPrice = product.price;
+    let realName = product.name;
+    let isBestPrice = product.is_best_price;
+
+    if (!realImage || realPrice === undefined) {
+      try {
+        const dbProduct = await ProductModel.findById(productIdStr).lean();
+        if (dbProduct) {
+          realImage = realImage || dbProduct.image_url || (Array.isArray(dbProduct.images) ? dbProduct.images[0] : '');
+          if (realPrice === undefined) realPrice = dbProduct.price;
+          realName = realName || dbProduct.name;
+          if (isBestPrice === undefined) isBestPrice = dbProduct.is_best_price;
+        }
+      } catch (dbErr) {
+        console.warn('[Notifications] Could not fetch DB product for arrival broadcast:', dbErr);
+      }
+    }
+
+    const publicImageUrl = resolvePublicImageUrl(realImage);
+
+    // Format clean title & body without any emojis
+    const title = `New arrival: ${realName.trim()}`;
+    const priceFormatted =
+      !isBestPrice && typeof realPrice === 'number' && !isNaN(realPrice) && realPrice > 0
+        ? `₹${Number(realPrice).toLocaleString('en-IN')}`
+        : '';
+    const body = priceFormatted
+      ? `Now available for ${priceFormatted} on RenewX.`
+      : `Now available on RenewX.`;
+
+    const canonicalUrl = `${env.FRONTEND_URL}/product/${productIdStr}`;
+
+    // De-duplication: Find users who already received a notification for this product
+    const alreadyNotifiedUserIds = await NotificationModel.find({
+      type: 'product',
+      reference_id: productIdStr,
+    }).distinct('user_id');
+
+    const alreadyNotifiedSet = new Set(alreadyNotifiedUserIds.map((id) => String(id)));
+
+    const adminEmail = (env.ADMIN_EMAIL || '').toLowerCase();
+
+    // Find all users (excluding admin from being broadcasted as a customer)
+    const allUsers = await User.find({}).select('_id email role notification_preferences +push_tokens').lean();
+    if (!allUsers || !allUsers.length) return;
+
+    const notificationsToInsert: Array<{
+      user_id: string;
+      type: string;
+      title: string;
+      body: string;
+      reference_id: string;
+      reference_type: string;
+    }> = [];
+
+    const pushMessages: Array<Record<string, unknown>> = [];
+    const eligibleUserIds: string[] = [];
+
+    for (const u of allUsers) {
+      const uId = u._id.toString();
+
+      // Exclude admin accounts from being notified as an ordinary customer
+      if (u.role === 'admin' || (u.email && u.email.toLowerCase() === adminEmail)) {
+        continue;
+      }
+
+      // Skip users who have already received this product's notification
+      if (alreadyNotifiedSet.has(uId)) {
+        continue;
+      }
+
+      // Respect explicit user preference: product_updates (never treat product arrivals as marketing sale ads)
+      if (u.notification_preferences?.product_updates === false) {
+        continue;
+      }
+
+      eligibleUserIds.push(uId);
+
+      notificationsToInsert.push({
+        user_id: uId,
+        type: 'product',
+        title,
+        body,
+        reference_id: productIdStr,
+        reference_type: 'product',
+      });
+
+      const rawTokens = (u as any).push_tokens || [];
+      const validTokens = rawTokens.filter(isExpoPushToken);
+
+      for (const to of validTokens) {
+        pushMessages.push({
+          to,
+          sound: 'default',
+          title,
+          body,
+          channelId: 'renewx-products',
+          priority: 'high',
+          data: {
+            screen: 'ProductDetail',
+            productId: productIdStr,
+            id: productIdStr,
+            name: realName,
+            price: priceFormatted,
+            imageUrl: publicImageUrl,
+            image: publicImageUrl,
+            url: canonicalUrl,
+            type: 'PRODUCT_ARRIVAL',
+          },
+        });
+      }
+    }
+
+    // 1. Batch insert in-app notifications into MongoDB for eligible users
+    if (notificationsToInsert.length) {
+      try {
+        await NotificationModel.insertMany(notificationsToInsert, { ordered: false });
+        console.log(`[Notifications] Broadcasted new arrival notification to ${notificationsToInsert.length} user inbox(es).`);
+      } catch (insertErr) {
+        console.error('[Notifications] Failed batch inserting new arrival notifications:', insertErr);
+      }
+    }
+
+    // 2. Dispatch push notifications to mobile devices via Expo
+    if (pushMessages.length) {
+      console.log(`[Notifications] Dispatching new arrival Expo push broadcast to ${pushMessages.length} device(s)...`);
+      await sendExpoPushMessages(pushMessages);
+    } else {
+      console.log('[Notifications] No registered Expo push tokens for new arrival broadcast.');
+    }
+
+    // 3. Dispatch Web Push notifications to active web subscribers
+    try {
+      const webSubs = await WebPushSubscriptionModel.find({
+        is_active: true,
+        $or: [
+          { user_id: { $in: eligibleUserIds } },
+          { user_id: null },
+          { user_id: { $exists: false } },
+        ],
+      }).lean();
+
+      if (webSubs.length > 0) {
+        console.log(`[Notifications] Dispatching Web Push broadcast to ${webSubs.length} web subscriber(s)...`);
+        await sendWebPushMessages(
+          webSubs.map((s) => ({
+            endpoint: s.endpoint,
+            keys: s.keys,
+          })),
+          {
+            title,
+            body,
+            icon: `${env.FRONTEND_URL}/favicon.png`,
+            badge: `${env.FRONTEND_URL}/favicon.png`,
+            image: publicImageUrl || undefined,
+            data: {
+              url: canonicalUrl,
+              productId: productIdStr,
+              type: 'PRODUCT_ARRIVAL',
+            },
+          }
+        );
+      } else {
+        console.log('[Notifications] No active Web Push subscriptions found for broadcast.');
+      }
+    } catch (webPushErr) {
+      console.error('[Notifications] Web push broadcast error:', webPushErr);
+    }
+  } catch (err) {
+    console.error('[Notifications] Error in broadcastNewProductArrival:', err);
+  }
+}
+
+export interface AdminNewOrderNotificationPayload {
+  orderId: string;
+  subtotal: number;
+  customerName: string;
+  customerPhone?: string;
+  customerAddress?: string;
+  paymentMethod: string;
+  itemCount?: number;
+  items?: Array<{ name: string; quantity: number; price: number }>;
+}
+
+/**
+ * Dispatches real-time notifications to all Admin accounts and devices
+ * when a customer places a new order.
+ * - Saves in-app notification in MongoDB for all admin users
+ * - Dispatches push notifications to all admin devices (Expo)
+ * - Sends email notification to admin email(s)
+ */
+export async function notifyAdminsNewOrder(payload: AdminNewOrderNotificationPayload): Promise<void> {
+  try {
+    // De-duplication check: if an admin notification already exists for this orderId
+    const existingAdminNotification = await NotificationModel.findOne({
+      type: 'admin_order',
+      reference_id: payload.orderId,
+    });
+    if (existingAdminNotification) {
+      console.log(`[Notifications] Skipping duplicate admin new order notification for #${payload.orderId}`);
+      return;
+    }
+
+    const adminEmail = (env.ADMIN_EMAIL || 'admin@renewx.com').toLowerCase();
+
+    // 1. Find all admin users by role or matching ADMIN_EMAIL
+    const adminUsers = await User.find({
+      $or: [{ role: 'admin' }, { email: adminEmail }],
+    }).select('_id email full_name +push_tokens').lean();
+
+    if (!adminUsers || !adminUsers.length) {
+      console.warn('[Notifications] No admin accounts found to receive new order alert');
+      return;
+    }
+
+    const orderShort = payload.orderId.slice(-6).toUpperCase();
+    const amountFormatted = `₹${Number(payload.subtotal).toLocaleString('en-IN')}`;
+    const title = `🛍️ New Order Received: #${orderShort}`;
+    const body = `${payload.customerName} placed order #${orderShort} for ${amountFormatted} (${payload.paymentMethod}).`;
+
+    const notificationsToInsert: Array<{
+      user_id: string;
+      type: string;
+      title: string;
+      body: string;
+      reference_id: string;
+      reference_type: string;
+    }> = [];
+
+    const pushMessages: Array<Record<string, unknown>> = [];
+
+    for (const admin of adminUsers) {
+      const adminId = admin._id.toString();
+
+      notificationsToInsert.push({
+        user_id: adminId,
+        type: 'admin_order',
+        title,
+        body,
+        reference_id: payload.orderId,
+        reference_type: 'admin_order',
+      });
+
+      const rawTokens = (admin as any).push_tokens || [];
+      const validTokens = rawTokens.filter(isExpoPushToken);
+
+      for (const to of validTokens) {
+        pushMessages.push({
+          to,
+          sound: 'default',
+          title,
+          body,
+          data: {
+            screen: 'AdminOrders',
+            orderId: payload.orderId,
+            id: payload.orderId,
+          },
+          channelId: 'default',
+          priority: 'high',
+        });
+      }
+    }
+
+    // 2. Batch insert in-app notifications into MongoDB for all admin users
+    if (notificationsToInsert.length) {
+      try {
+        await NotificationModel.insertMany(notificationsToInsert, { ordered: false });
+        console.log(`[Notifications] Saved new order alert to ${notificationsToInsert.length} admin inbox(es).`);
+      } catch (insertErr) {
+        console.error('[Notifications] Failed saving admin in-app notification:', insertErr);
+      }
+    }
+
+    // 3. Dispatch Push Notifications to all admin devices
+    if (pushMessages.length) {
+      console.log(`[Notifications] Dispatching new order push notification to ${pushMessages.length} admin device(s)...`);
+      await sendExpoPushMessages(pushMessages);
+    } else {
+      console.log('[Notifications] No registered push tokens found for admin users.');
+    }
+
+    // 4. Send Email Notification to Admin if SMTP is configured
+    try {
+      const { sendAdminOrderAlertEmail } = await import('./emailService');
+      const adminEmails = [...new Set(adminUsers.map((a) => a.email).filter(Boolean))];
+      for (const email of adminEmails) {
+        await sendAdminOrderAlertEmail({
+          email,
+          orderId: payload.orderId,
+          subtotal: payload.subtotal,
+          customerName: payload.customerName,
+          customerPhone: payload.customerPhone,
+          customerAddress: payload.customerAddress,
+          paymentMethod: payload.paymentMethod,
+          items: payload.items || [],
+        });
+      }
+    } catch (emailErr) {
+      console.warn('[Notifications] Could not send admin new order email alert:', emailErr);
+    }
+  } catch (err) {
+    console.error('[Notifications] Failed to notify admin of new order:', err);
+  }
+}
+
+export interface AdminNewTradeInPayload {
+  tradeInId: string;
+  customerName: string;
+  customerEmail?: string;
+  customerPhone?: string;
+  brand?: string;
+  model?: string;
+  valuation?: number;
+  pickupAddress?: string;
+}
+
+/**
+ * Dispatches real-time alerts to Admin accounts and devices
+ * when a customer submits a new sell/trade-in request.
+ * - Saves in-app notification in MongoDB for admin users only
+ * - Dispatches push notification to all admin devices
+ */
+export async function notifyAdminsNewTradeIn(payload: AdminNewTradeInPayload): Promise<void> {
+  try {
+    const existing = await NotificationModel.findOne({
+      type: 'admin_trade_in',
+      reference_id: payload.tradeInId,
+    });
+    if (existing) {
+      console.log(`[Notifications] Skipping duplicate admin trade-in notification for #${payload.tradeInId}`);
+      return;
+    }
+
+    const adminEmail = (env.ADMIN_EMAIL || 'admin@renewx.com').toLowerCase();
+    const adminUsers = await User.find({
+      $or: [{ role: 'admin' }, { email: adminEmail }],
+    }).select('_id email full_name +push_tokens').lean();
+
+    if (!adminUsers || !adminUsers.length) {
+      console.warn('[Notifications] No admin accounts found to receive new trade-in alert');
+      return;
+    }
+
+    const deviceName = [payload.brand, payload.model].filter(Boolean).join(' ') || 'Device';
+    const valuationStr = payload.valuation ? ` (Est: ₹${Number(payload.valuation).toLocaleString('en-IN')})` : '';
+    const title = `📱 New Sell Request: ${deviceName}`;
+    const body = `${payload.customerName} submitted a sell request for ${deviceName}${valuationStr}. Review required.`;
+
+    const notificationsToInsert: Array<{
+      user_id: string;
+      type: string;
+      title: string;
+      body: string;
+      reference_id: string;
+      reference_type: string;
+    }> = [];
+
+    const pushMessages: Array<Record<string, unknown>> = [];
+
+    for (const admin of adminUsers) {
+      const adminId = admin._id.toString();
+
+      notificationsToInsert.push({
+        user_id: adminId,
+        type: 'admin_trade_in',
+        title,
+        body,
+        reference_id: payload.tradeInId,
+        reference_type: 'trade_in',
+      });
+
+      const rawTokens = (admin as any).push_tokens || [];
+      const validTokens = rawTokens.filter(isExpoPushToken);
+
+      for (const to of validTokens) {
+        pushMessages.push({
+          to,
+          sound: 'default',
+          title,
+          body,
+          data: {
+            screen: 'AdminTradeIn',
+            tradeInId: payload.tradeInId,
+            id: payload.tradeInId,
+          },
+          channelId: 'default',
+          priority: 'high',
+        });
+      }
+    }
+
+    if (notificationsToInsert.length) {
+      try {
+        await NotificationModel.insertMany(notificationsToInsert, { ordered: false });
+        console.log(`[Notifications] Saved new trade-in alert to ${notificationsToInsert.length} admin inbox(es).`);
+      } catch (insertErr) {
+        console.error('[Notifications] Failed saving admin trade-in in-app notification:', insertErr);
+      }
+    }
+
+    if (pushMessages.length) {
+      console.log(`[Notifications] Dispatching new trade-in push notification to ${pushMessages.length} admin device(s)...`);
+      await sendExpoPushMessages(pushMessages);
+    }
+  } catch (err) {
+    console.error('[Notifications] Failed to notify admin of new trade-in:', err);
+  }
+}
+
+export interface PromotionNotificationPayload {
+  title: string;
+  body: string;
+  product1Id: string;
+  product2Id: string;
+}
+
+/**
+ * Validates real MongoDB products and broadcasts a rich dual-product promotion
+ * notification to all registered customer devices.
+ */
+export async function dispatchPromotionNotification(payload: PromotionNotificationPayload): Promise<{
+  success: boolean;
+  recipientsCount: number;
+  inAppCount: number;
+  webPushCount?: number;
+  products: {
+    product1: { id: string; name: string; price: string; oldPrice: string; image: string };
+    product2: { id: string; name: string; price: string; oldPrice: string; image: string };
+  };
+}> {
+  const title = (payload.title || '').trim();
+  const body = (payload.body || '').trim();
+  const p1Id = (payload.product1Id || '').trim();
+  const p2Id = (payload.product2Id || '').trim();
+
+  if (!title) throw new Error('Promotion title is required');
+  if (!body) throw new Error('Promotion message/body is required');
+  if (!p1Id) throw new Error('Product 1 is required');
+  if (!p2Id) throw new Error('Product 2 is required');
+
+  if (title.length > 120) throw new Error('Title cannot exceed 120 characters');
+  if (body.length > 250) throw new Error('Body cannot exceed 250 characters');
+
+  // 1. Fetch real products from MongoDB using resilient ID lookup
+  const findProduct = async (id: string) => {
+    if (!id) return null;
+    const mongoose = await import('mongoose');
+    if (mongoose.default.Types.ObjectId.isValid(id)) {
+      const p = await ProductModel.findById(id).lean();
+      if (p) return p;
+    }
+    return await ProductModel.findOne({ $or: [{ id }, { _id: id }] }).lean();
+  };
+
+  const [product1, product2] = await Promise.all([
+    findProduct(p1Id),
+    findProduct(p2Id),
+  ]);
+
+  if (!product1) {
+    throw new Error(`Product 1 (ID: ${p1Id}) not found in inventory.`);
+  }
+  if (!product2) {
+    throw new Error(`Product 2 (ID: ${p2Id}) not found in inventory.`);
+  }
+
+  // 2. Format trusted data directly from DB
+  const formatPrice = (val?: number) =>
+    typeof val === 'number' && !isNaN(val) ? `₹${Number(val).toLocaleString('en-IN')}` : '';
+
+  const p1Name = product1.name;
+  const p1Price = formatPrice(product1.price);
+  const p1OldPrice = formatPrice(product1.original_price);
+  const p1Image = product1.image_url || (Array.isArray(product1.images) ? product1.images[0] : '') || '';
+
+  const p2Name = product2.name;
+  const p2Price = formatPrice(product2.price);
+  const p2OldPrice = formatPrice(product2.original_price);
+  const p2Image = product2.image_url || (Array.isArray(product2.images) ? product2.images[0] : '') || '';
+
+  // 3. Find eligible users
+  const allUsers = await User.find({}).select('_id notification_preferences +push_tokens').lean();
+
+  const notificationsToInsert: Array<{
+    user_id: string;
+    type: string;
+    title: string;
+    body: string;
+    reference_id: string;
+    reference_type: string;
+    data: Record<string, unknown>;
+  }> = [];
+
+  const pushMessages: Array<Record<string, unknown>> = [];
+
+  for (const u of allUsers) {
+    const uId = u._id.toString();
+
+    // In-app notifications are saved for all user inboxes
+    notificationsToInsert.push({
+      user_id: uId,
+      type: 'promotion',
+      title,
+      body,
+      reference_id: String(product1._id),
+      reference_type: 'product',
+      data: {
+        product1Id: String(product1._id),
+        product2Id: String(product2._id),
+      },
+    });
+
+    // For push notifications, respect explicit marketing opt-out
+    if (u.notification_preferences?.marketing === false) {
+      continue;
+    }
+
+    const rawTokens = (u as any).push_tokens || [];
+    const validTokens = rawTokens.filter(isExpoPushToken);
+
+    for (const to of validTokens) {
+      pushMessages.push({
+        to,
+        sound: 'default',
+        title,
+        body,
+        channelId: 'renewx-promotions',
+        priority: 'high',
+        data: {
+          type: 'PROMOTION',
+          screen: 'ProductDetail',
+          id: String(product1._id),
+          productId: String(product1._id),
+          title,
+          body,
+          product1Id: String(product1._id),
+          product1Name: p1Name,
+          product1Price: p1Price,
+          product1OldPrice: p1OldPrice,
+          product1Image: p1Image,
+          product2Id: String(product2._id),
+          product2Name: p2Name,
+          product2Price: p2Price,
+          product2OldPrice: p2OldPrice,
+          product2Image: p2Image,
+        },
+      });
+    }
+  }
+
+  // 4. Batch insert in-app notifications
+  if (notificationsToInsert.length) {
+    try {
+      await NotificationModel.insertMany(notificationsToInsert, { ordered: false });
+      console.log(`[Notifications] Broadcasted promotion to ${notificationsToInsert.length} inboxes.`);
+    } catch (insertErr) {
+      console.error('[Notifications] Failed saving promotional in-app notifications:', insertErr);
+    }
+  }
+
+  // 5. Dispatch push messages to devices
+  if (pushMessages.length) {
+    console.log(`[Notifications] Dispatching rich promotion push to ${pushMessages.length} device(s)...`);
+    await sendExpoPushMessages(pushMessages);
+  } else {
+    console.log('[Notifications] No registered push tokens for promotional broadcast.');
+  }
+
+  // 6. Dispatch Web Push messages to active browser subscriptions
+  let webPushCount = 0;
+  try {
+    const webSubs = await WebPushSubscriptionModel.find({ is_active: true }).lean();
+    if (webSubs && webSubs.length > 0) {
+      console.log(`[Notifications] Dispatching promotional web push to ${webSubs.length} browser(s)...`);
+      await sendWebPushMessages(
+        webSubs.map((s) => ({
+          endpoint: s.endpoint,
+          keys: s.keys,
+        })),
+        {
+          title,
+          body,
+          icon: p1Image || '/icon-192.png',
+          badge: '/badge-72.png',
+          data: {
+            type: 'PROMOTION',
+            productId: String(product1._id),
+            product1Id: String(product1._id),
+            product2Id: String(product2._id),
+            url: `/product/${product1._id}`,
+          },
+        }
+      );
+      webPushCount = webSubs.length;
+    }
+  } catch (webErr) {
+    console.warn('[Notifications] Error broadcasting promotional web push:', webErr);
+  }
+
+  return {
+    success: true,
+    recipientsCount: pushMessages.length,
+    inAppCount: notificationsToInsert.length,
+    webPushCount,
+    products: {
+      product1: { id: String(product1._id), name: p1Name, price: p1Price, oldPrice: p1OldPrice, image: p1Image },
+      product2: { id: String(product2._id), name: p2Name, price: p2Price, oldPrice: p2OldPrice, image: p2Image },
+    },
+  };
+}

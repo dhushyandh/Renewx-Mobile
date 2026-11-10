@@ -1,0 +1,234 @@
+import mongoose, { Schema } from 'mongoose';
+import bcrypt from 'bcryptjs';
+
+export interface ISavedAddress {
+  id: string;
+  type: 'Home' | 'Work' | 'Other';
+  name: string;
+  phone: string;
+  address: string;
+  pincode: string;
+  city?: string;
+  state?: string;
+  landmark?: string;
+  cityStatePincode?: string;
+  isDefault?: boolean;
+}
+
+export interface IUser {
+  id: string;
+  email: string;
+  password?: string;
+  role: 'admin' | 'customer';
+  status?: 'active' | 'inactive' | 'blocked';
+  full_name?: string;
+  avatar_url?: string;
+  phone?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  bio?: string;
+  profile_completed?: boolean;
+  saved_addresses?: ISavedAddress[];
+  notification_preferences?: {
+    order_updates: boolean;
+    sell_request_updates: boolean;
+    marketing: boolean;
+    product_updates?: boolean;
+    whatsapp_order_updates?: boolean;
+  };
+  push_tokens?: string[];
+  reset_password_token?: string;
+  reset_password_expires?: Date;
+  pending_email?: string;
+  email_verification_code?: string;
+  email_verification_expires?: Date;
+  is_email_verified?: boolean;
+  created_at: Date;
+  updated_at: Date;
+  comparePassword(candidatePassword: string): Promise<boolean>;
+}
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  role: 'admin' | 'customer';
+  status?: 'active' | 'inactive' | 'blocked';
+  full_name?: string;
+  avatar_url?: string;
+  phone?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  bio?: string;
+  profile_completed?: boolean;
+  saved_addresses?: ISavedAddress[];
+  created_at?: string;
+}
+
+export interface UpdateUserRoleDTO {
+  role?: 'admin' | 'customer';
+  status?: 'active' | 'inactive' | 'blocked';
+}
+
+const UserSchema = new Schema<IUser>(
+  {
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      lowercase: true,
+      trim: true,
+    },
+    password: {
+      type: String,
+      required: true,
+      select: false, // Don't return password by default
+    },
+    role: {
+      type: String,
+      enum: ['admin', 'customer'],
+      default: 'customer',
+      index: true,
+    },
+    status: {
+      type: String,
+      enum: ['active', 'inactive', 'blocked'],
+      default: 'active',
+      index: true,
+    },
+    full_name: {
+      type: String,
+      default: '',
+    },
+    avatar_url: {
+      type: String,
+      default: '',
+    },
+    phone: {
+      type: String,
+      default: '',
+    },
+    address: {
+      type: String,
+      default: '',
+    },
+    city: {
+      type: String,
+      default: '',
+    },
+    state: {
+      type: String,
+      default: '',
+    },
+    pincode: {
+      type: String,
+      default: '',
+    },
+    bio: {
+      type: String,
+      default: '',
+    },
+    profile_completed: {
+      type: Boolean,
+      default: false,
+    },
+    saved_addresses: {
+      type: [
+        {
+          id: { type: String, required: true },
+          type: { type: String, enum: ['Home', 'Work', 'Other'], default: 'Home' },
+          name: { type: String, default: '' },
+          phone: { type: String, default: '' },
+          address: { type: String, default: '' },
+          pincode: { type: String, default: '' },
+          city: { type: String, default: 'Bangalore' },
+          state: { type: String, default: 'Karnataka' },
+          landmark: { type: String, default: '' },
+          cityStatePincode: { type: String, default: '' },
+          isDefault: { type: Boolean, default: false },
+        },
+      ],
+      default: [],
+    },
+    notification_preferences: {
+      order_updates: { type: Boolean, default: true },
+      sell_request_updates: { type: Boolean, default: true },
+      marketing: { type: Boolean, default: true },
+      product_updates: { type: Boolean, default: true },
+      whatsapp_order_updates: { type: Boolean, default: true },
+    },
+    push_tokens: {
+      type: [String],
+      default: [],
+      select: false,
+    },
+    reset_password_token: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    reset_password_expires: {
+      type: Date,
+      default: null,
+      select: false,
+    },
+    pending_email: {
+      type: String,
+      default: null,
+      lowercase: true,
+      trim: true,
+      select: false,
+    },
+    email_verification_code: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    email_verification_expires: {
+      type: Date,
+      default: null,
+      select: false,
+    },
+    is_email_verified: {
+      type: Boolean,
+      default: true,
+    },
+  },
+  {
+    timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
+    toJSON: {
+      virtuals: true,
+      transform: (_doc, ret: any) => {
+        ret.id = ret._id.toString();
+        delete ret._id;
+        delete ret.__v;
+        delete ret.password;
+        delete ret.reset_password_token;
+        delete ret.reset_password_expires;
+        return ret;
+      },
+    },
+  }
+);
+
+// Hash password before save
+UserSchema.pre('save', async function () {
+  if (!this.isModified('password') || !this.password) return;
+  const salt = await bcrypt.genSalt(10);
+  this.password = await bcrypt.hash(this.password, salt);
+});
+
+// Compare password method
+UserSchema.methods.comparePassword = async function (candidatePassword: string): Promise<boolean> {
+  if (!this.password) return false;
+  return bcrypt.compare(candidatePassword, this.password);
+};
+
+UserSchema.index({ role: 1, created_at: -1 });
+UserSchema.index({ created_at: -1 });
+UserSchema.index({ push_tokens: 1 }, { sparse: true });
+
+export const User = (mongoose.models.User as mongoose.Model<IUser>) || mongoose.model<IUser>('User', UserSchema);

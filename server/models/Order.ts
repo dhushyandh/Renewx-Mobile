@@ -1,0 +1,180 @@
+import mongoose, { Schema } from 'mongoose';
+
+export interface OrderItem {
+  product_id: string;
+  product_name: string;
+  quantity: number;
+  price: number;
+}
+
+export type OrderStatus =
+  | 'pending'
+  | 'verified'
+  | 'processing'
+  | 'shipped'
+  | 'out_for_delivery'
+  | 'delivered'
+  | 'cancelled';
+
+export type PaymentStatus =
+  | 'created'
+  | 'paid'
+  | 'failed'
+  | 'refunded'
+  | 'refund_pending';
+
+export interface Order {
+  id: string;
+  user_id: string;
+  subtotal: number;
+  savings: number;
+  status: OrderStatus;
+  payment_status: PaymentStatus;
+  payment_method?: string;
+  razorpay_order_id?: string;
+  razorpay_payment_id?: string;
+  payment_verified_at?: string;
+  checkout_key?: string;
+  currency: 'INR';
+  courier?: string;
+  courier_phone?: string;
+  tracking_number?: string;
+  estimated_delivery?: string;
+  customer_info?: {
+    name: string;
+    phone: string;
+    address: string;
+    pincode: string;
+    whatsapp_consent?: boolean;
+  };
+  order_items?: OrderItem[];
+  created_at?: string;
+}
+
+export interface IOrder {
+  id: string;
+  user_id: string;
+  subtotal: number;
+  savings: number;
+  status: OrderStatus;
+  payment_status: PaymentStatus;
+  payment_method?: string;
+  razorpay_order_id?: string;
+  razorpay_payment_id?: string;
+  payment_verified_at?: Date;
+  checkout_key?: string;
+  currency: 'INR';
+  courier?: string;
+  courier_phone?: string;
+  tracking_number?: string;
+  estimated_delivery?: string;
+  customer_info?: {
+    name: string;
+    phone: string;
+    address: string;
+    pincode: string;
+    whatsapp_consent?: boolean;
+  };
+  order_items: OrderItem[];
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface CreateOrderDTO {
+  items: {
+    product_id: string;
+    quantity: number;
+  }[];
+  customer_info: {
+    name: string;
+    phone: string;
+    address: string;
+    pincode: string;
+    whatsapp_consent?: boolean;
+  };
+  payment_method?: 'razorpay' | 'cod';
+}
+
+const OrderItemSchema = new Schema<OrderItem>(
+  {
+    product_id: { type: String, required: true },
+    product_name: { type: String, required: true },
+    quantity: { type: Number, required: true, min: 1 },
+    price: { type: Number, required: true, min: 0 },
+  },
+  { _id: false }
+);
+
+const OrderSchema = new Schema<IOrder>(
+  {
+    user_id: { type: String, required: true, index: true },
+    subtotal: { type: Number, required: true, min: 0 },
+    savings: { type: Number, default: 0, min: 0 },
+    status: {
+      type: String,
+      enum: ['pending', 'verified', 'processing', 'shipped', 'out_for_delivery', 'delivered', 'cancelled'],
+      default: 'pending',
+      index: true,
+    },
+    payment_status: {
+      type: String,
+      enum: ['created', 'paid', 'failed', 'refunded', 'refund_pending'],
+      default: 'created',
+      index: true,
+    },
+    payment_method: { type: String, default: 'razorpay' },
+    razorpay_order_id: { type: String, index: true },
+    razorpay_payment_id: { type: String },
+    payment_verified_at: { type: Date },
+    checkout_key: { type: String, select: false },
+    currency: { type: String, enum: ['INR'], default: 'INR' },
+    courier: { type: String, default: '' },
+    courier_phone: { type: String, default: '' },
+    tracking_number: { type: String, default: '' },
+    estimated_delivery: { type: String, default: '' },
+    customer_info: {
+      name: { type: String, default: '' },
+      phone: { type: String, default: '' },
+      address: { type: String, default: '' },
+      pincode: { type: String, default: '' },
+      whatsapp_consent: { type: Boolean, default: true },
+    },
+    order_items: { type: [OrderItemSchema], default: [] },
+  },
+  {
+    autoIndex: false,
+    timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
+    toJSON: {
+      virtuals: true,
+      transform: (_doc, ret: any) => {
+        ret.id = ret._id.toString();
+        delete ret._id;
+        delete ret.__v;
+        delete ret.checkout_key;
+        return ret;
+      },
+    },
+  }
+);
+
+// Only checkout requests carry this key. The partial index makes duplicate
+// submissions for the same user/key resolve to the same draft without
+// indexing legacy orders that do not have an idempotency key.
+OrderSchema.index(
+  { user_id: 1, checkout_key: 1 },
+  { unique: true, partialFilterExpression: { checkout_key: { $type: 'string' } } }
+);
+
+// A Razorpay payment can only belong to one order. The partial index
+// keeps legacy orders without a payment id out of the uniqueness constraint.
+OrderSchema.index(
+  { razorpay_payment_id: 1 },
+  { unique: true, partialFilterExpression: { razorpay_payment_id: { $type: 'string' } } }
+);
+
+OrderSchema.index({ user_id: 1, created_at: -1 });
+OrderSchema.index({ status: 1, created_at: -1 });
+OrderSchema.index({ created_at: -1 });
+
+export const OrderModel =
+  (mongoose.models.Order as mongoose.Model<IOrder>) || mongoose.model<IOrder>('Order', OrderSchema);

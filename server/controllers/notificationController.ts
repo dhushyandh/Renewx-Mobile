@@ -1,0 +1,531 @@
+import { Request, Response, NextFunction } from 'express';
+import mongoose from 'mongoose';
+import { AuthenticatedRequest } from '../middleware/auth';
+import { NotificationModel } from '../models/Notification';
+import { User } from '../models/User';
+import { WebPushSubscriptionModel } from '../models/WebPushSubscription';
+import { env } from '../config/env';
+
+export async function getNotifications(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.user) {
+      res.status(401).json({ success: false, error: { message: 'Authentication required', code: 'UNAUTHORIZED' } });
+      return;
+    }
+
+    const { page: rawPage, limit: rawLimit } = req.query;
+    const page = Number(rawPage) > 0 ? Number(rawPage) : 1;
+    const limit = Number(rawLimit) > 0 ? Math.min(Number(rawLimit), 100) : 50;
+
+    const filter = { user_id: req.user.id };
+
+    const [list, total, unreadCount] = await Promise.all([
+      NotificationModel.find(filter)
+        .sort({ created_at: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+      NotificationModel.countDocuments(filter),
+      NotificationModel.countDocuments({ user_id: req.user.id, read_at: null }),
+    ]);
+
+    const normalized = list.map(({ _id, ...item }: any) => ({
+      ...item,
+      id: _id ? _id.toString() : item.id,
+    }));
+
+    res.json({
+      success: true,
+      count: normalized.length,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      unreadCount,
+      data: normalized,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function markNotificationRead(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.user) {
+      res.status(401).json({ success: false, error: { message: 'Authentication required', code: 'UNAUTHORIZED' } });
+      return;
+    }
+
+    const { id } = req.params;
+    let filter: any;
+
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      filter = { _id: id, user_id: req.user.id };
+    } else {
+      filter = { user_id: req.user.id, $or: [{ reference_id: id }, { type: id }] };
+    }
+
+    const notification = await NotificationModel.findOneAndUpdate(
+      filter,
+      { $set: { read_at: new Date() } },
+      { new: true }
+    );
+
+    res.json({ success: true, data: notification });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function markAllNotificationsRead(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.user) {
+      res.status(401).json({ success: false, error: { message: 'Authentication required', code: 'UNAUTHORIZED' } });
+      return;
+    }
+
+    await NotificationModel.updateMany(
+      { user_id: req.user.id, read_at: null },
+      { $set: { read_at: new Date() } }
+    );
+
+    res.json({ success: true, message: 'Notifications marked as read' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function deleteNotification(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.user) {
+      res.status(401).json({ success: false, error: { message: 'Authentication required', code: 'UNAUTHORIZED' } });
+      return;
+    }
+
+    const { id } = req.params;
+    let filter: any;
+
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      filter = { _id: id, user_id: req.user.id };
+    } else {
+      filter = {
+        user_id: req.user.id,
+        $or: [{ reference_id: id }, { type: id }],
+      };
+    }
+
+    const deleted = await NotificationModel.findOneAndDelete(filter);
+    res.json({ success: true, message: 'Notification deleted', deleted: !!deleted });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function clearAllNotifications(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.user) {
+      res.status(401).json({ success: false, error: { message: 'Authentication required', code: 'UNAUTHORIZED' } });
+      return;
+    }
+
+    await NotificationModel.deleteMany({ user_id: req.user.id });
+    res.json({ success: true, message: 'All notifications cleared' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+import { isExpoPushToken } from '../services/notificationService';
+
+function validatePushToken(value: unknown): string | null {
+  if (isExpoPushToken(value)) {
+    return (value as string).trim();
+  }
+  return null;
+}
+
+export async function registerPushToken(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.user) {
+      res.status(401).json({ success: false, error: { message: 'Authentication required', code: 'UNAUTHORIZED' } });
+      return;
+    }
+
+    const rawToken = req.body?.token ?? req.body?.pushToken ?? req.body?.push_token;
+    const token = validatePushToken(rawToken);
+    if (!token) {
+      console.warn(`[PushToken] 400 Rejected registration for user ${req.user.id}. Payload:`, req.body);
+      res.status(400).json({
+        success: false,
+        error: {
+          message: 'A valid Expo push token is required',
+          code: 'INVALID_PUSH_TOKEN',
+          received: typeof rawToken === 'string' ? `${rawToken.slice(0, 30)}...` : null,
+        },
+      });
+      return;
+    }
+
+    // A physical device token should belong to only one signed-in account.
+    // Ensure strict ObjectId comparison so other accounts on the same device don't leak notifications.
+    const userObjectId = mongoose.Types.ObjectId.isValid(req.user.id)
+      ? new mongoose.Types.ObjectId(req.user.id)
+      : req.user.id;
+
+    await User.updateMany(
+      { _id: { $ne: userObjectId }, push_tokens: token },
+      { $pull: { push_tokens: token } }
+    ).exec();
+
+    await User.findByIdAndUpdate(
+      req.user.id,
+      { $addToSet: { push_tokens: token } },
+      { new: false }
+    ).exec();
+
+    console.log(`[PushToken] Successfully registered push token for user ${req.user.id}: ${token.slice(0, 25)}...`);
+    res.json({ success: true, message: 'Push token registered' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function unregisterPushToken(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.user) {
+      res.status(401).json({ success: false, error: { message: 'Authentication required', code: 'UNAUTHORIZED' } });
+      return;
+    }
+
+    const rawToken = req.body?.token ?? req.body?.pushToken ?? req.body?.push_token;
+    const token = validatePushToken(rawToken);
+    if (!token) {
+      res.status(400).json({ success: false, error: { message: 'A valid Expo push token is required', code: 'INVALID_PUSH_TOKEN' } });
+      return;
+    }
+
+    await User.findByIdAndUpdate(req.user.id, { $pull: { push_tokens: token } }).exec();
+    console.log(`[PushToken] Removed push token for user ${req.user.id}`);
+    res.json({ success: true, message: 'Push token removed' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function triggerTestNotification(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const { action = 'out_for_delivery' } = req.body || {};
+    const orderId = 'RNX' + Date.now().toString().slice(-6);
+
+        if (action === 'promotion') {
+      const { dispatchPromotionNotification } = await import('../services/notificationService');
+      const { ProductModel } = await import('../models/Product');
+      const prods = await ProductModel.find().limit(2).lean();
+      if (prods.length >= 2) {
+        await dispatchPromotionNotification({
+          title: '🔥 Weekend Device Deals 🔥',
+          body: 'Blockbuster deals on selected devices • Limited stock',
+          product1Id: (prods[0] as any)._id.toString(),
+          product2Id: (prods[1] as any)._id.toString(),
+        });
+      } else if (prods.length === 1) {
+        await dispatchPromotionNotification({
+          title: '🔥 Exclusive Device Deal 🔥',
+          body: 'Special offer on certified devices • Limited stock',
+          product1Id: (prods[0] as any)._id.toString(),
+          product2Id: (prods[0] as any)._id.toString(),
+        });
+      }
+      res.json({ success: true, message: "Promotional broadcast dispatched successfully" });
+      return;
+    }
+    if (action === 'new_arrival') {
+      const { broadcastNewProductArrival } = await import('../services/notificationService');
+      const { ProductModel } = await import('../models/Product');
+      const realProd = await ProductModel.findOne().lean();
+      if (realProd) {
+        await broadcastNewProductArrival({
+          id: (realProd as any)._id.toString(),
+          name: realProd.name,
+          brand: realProd.brand,
+          price: realProd.price,
+          is_best_price: (realProd as any).is_best_price,
+          image: realProd.image_url || (Array.isArray(realProd.images) ? realProd.images[0] : ''),
+        });
+      }
+      res.json({ success: true, message: "New arrival notification broadcasted to all users" });
+      return;
+    }
+
+    if (action === 'admin_new_order') {
+      const { notifyAdminsNewOrder } = await import('../services/notificationService');
+      await notifyAdminsNewOrder({
+        orderId,
+        subtotal: 54999,
+        customerName: req.user?.full_name || 'Rahul Sharma',
+        customerPhone: '9342763553',
+        customerAddress: '42 MG Road, Indiranagar, Bengaluru, 560038',
+        paymentMethod: 'Cash on Delivery',
+        itemCount: 1,
+        items: [{ name: 'MacBook Air M2 256GB', quantity: 1, price: 54999 }],
+      });
+      res.json({ success: true, message: "Admin new order alert dispatched successfully" });
+      return;
+    }
+
+    if (action === 'admin_trade_in') {
+      const { notifyAdminsNewTradeIn } = await import('../services/notificationService');
+      await notifyAdminsNewTradeIn({
+        tradeInId: orderId,
+        customerName: req.user?.full_name || 'Rahul Sharma',
+        customerPhone: '9342763553',
+        customerEmail: req.user?.email || 'customer@example.com',
+        brand: 'Apple',
+        model: 'iPhone 14 Pro 128GB',
+        valuation: 42000,
+        pickupAddress: '42 MG Road, Indiranagar, Bengaluru, 560038',
+      });
+      res.json({ success: true, message: "Admin new sell request alert dispatched successfully" });
+      return;
+    }
+
+    let targetUserId = req.user?.id;
+    if (!targetUserId) {
+      const firstUser = await User.findOne({}).select('_id');
+      targetUserId = firstUser ? firstUser._id.toString() : '';
+    }
+
+    if (!targetUserId) {
+      res.status(401).json({ success: false, error: { message: 'Authentication or registered user required', code: 'UNAUTHORIZED' } });
+      return;
+    }
+
+    let event: any;
+    if (action === 'order_placed') {
+      event = { action: 'order_placed', userId: targetUserId, orderId, subtotal: 34999, paymentMethod: 'Cash on Delivery' };
+    } else if (action === 'payment_successful') {
+      event = { action: 'payment_successful', userId: targetUserId, orderId, subtotal: 34999 };
+    } else if (action === 'order_shipped') {
+      event = { action: 'order_shipped', userId: targetUserId, orderId, courier: 'BlueDart Express', trackingNumber: 'RNX829104812' };
+    } else if (action === 'out_for_delivery') {
+      event = { action: 'out_for_delivery', userId: targetUserId, orderId };
+    } else if (action === 'order_delivered') {
+      event = { action: 'order_delivered', userId: targetUserId, orderId };
+    } else if (action === 'order_cancelled') {
+      event = { action: 'order_cancelled', userId: targetUserId, orderId, reason: 'Customer request' };
+    } else if (action === 'refund_update') {
+      event = { action: 'refund_update', userId: targetUserId, orderId, amount: 34999, status: 'completed' };
+    } else if (action === 'trade_in_submitted') {
+      event = { action: 'trade_in_submitted', userId: targetUserId, tradeInId: orderId, brand: 'Apple', model: 'iPhone 13 Pro', valuation: 38500 };
+    } else if (action === 'trade_in_status_changed') {
+      event = { action: 'trade_in_status_changed', userId: targetUserId, tradeInId: orderId, brand: 'Apple', model: 'iPhone 13 Pro', status: 'approved' };
+    } else if (action === 'trade_in_valuation_changed') {
+      event = { action: 'trade_in_valuation_changed', userId: targetUserId, tradeInId: orderId, brand: 'Apple', model: 'iPhone 13 Pro', amount: 39500 };
+    } else if (action === 'pickup_scheduled') {
+      event = { action: 'pickup_scheduled', userId: targetUserId, tradeInId: orderId, brand: 'Apple', model: 'iPhone 13 Pro' };
+    } else if (action === 'pickup_completed') {
+      event = { action: 'pickup_completed', userId: targetUserId, tradeInId: orderId, brand: 'Apple', model: 'iPhone 13 Pro' };
+    } else if (action === 'account_security_update') {
+      event = { action: 'account_security_update', userId: targetUserId, title: 'Account/security update', message: 'Your account password was successfully updated.' };
+    } else {
+      event = { action: 'order_status_changed', userId: targetUserId, orderId, status: 'processing' };
+    }
+
+    const { notifyUserEvent } = await import('../services/notificationService');
+    await notifyUserEvent(event);
+
+    res.json({ success: true, message: `Notification '${event.action}' dispatched`, event });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * Admin endpoint: validates products from MongoDB and dispatches
+ * rich dual-product promotion notifications.
+ */
+export async function sendPromotionNotification(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.user || req.user.role !== 'admin') {
+      res.status(403).json({
+        success: false,
+        error: { message: 'Access denied. Admin privileges required.', code: 'FORBIDDEN' },
+      });
+      return;
+    }
+
+    const { title, body, product1Id, product2Id } = req.body || {};
+
+    const { dispatchPromotionNotification } = await import('../services/notificationService');
+    const result = await dispatchPromotionNotification({
+      title,
+      body,
+      product1Id,
+      product2Id,
+    });
+
+    res.json({
+      success: true,
+      message: `Promotion broadcast dispatched to ${result.recipientsCount} device(s) and ${result.inAppCount} user inbox(es)`,
+      data: result,
+    });
+  } catch (err: any) {
+    res.status(400).json({
+      success: false,
+      error: {
+        message: err?.message || 'Failed to dispatch promotion notification',
+        code: 'BAD_REQUEST',
+      },
+    });
+  }
+}
+
+/**
+ * Returns the public VAPID key so supported browsers can create push subscriptions.
+ * Public endpoint (no sensitive secrets returned).
+ */
+export function getWebPushPublicKey(_req: Request, res: Response): void {
+  res.json({
+    success: true,
+    data: {
+      publicKey: env.VAPID_PUBLIC_KEY,
+    },
+  });
+}
+
+/**
+ * Subscribes a browser to Web Push notifications.
+ * Accepts subscription object with endpoint and p256dh/auth keys.
+ * Associates authenticated user ID if logged in.
+ */
+export async function subscribeWebPush(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const raw = req.body || {};
+    const subscription = raw.subscription || raw;
+    const endpoint = (subscription.endpoint || raw.endpoint || '').trim();
+    const keys = subscription.keys || raw.keys;
+
+    if (!endpoint || !keys?.p256dh || !keys?.auth) {
+      res.status(400).json({
+        success: false,
+        error: {
+          message: 'Valid PushSubscription with endpoint, p256dh, and auth keys is required',
+          code: 'INVALID_PUSH_SUBSCRIPTION',
+        },
+      });
+      return;
+    }
+
+    const userId = req.user?.id || null;
+    const userAgent = req.headers['user-agent'] || undefined;
+
+    const saved = await WebPushSubscriptionModel.findOneAndUpdate(
+      { endpoint },
+      {
+        $set: {
+          endpoint,
+          keys: {
+            p256dh: String(keys.p256dh).trim(),
+            auth: String(keys.auth).trim(),
+          },
+          user_id: userId,
+          user_agent: userAgent,
+          is_active: true,
+        },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+
+    console.log(`[WebPush] Registered browser subscription for user ${userId || 'guest'}: ${endpoint.slice(0, 35)}...`);
+    res.json({
+      success: true,
+      message: 'Web push subscription registered successfully',
+      data: { id: saved.id, is_active: saved.is_active },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * Deactivates or unregisters a browser Web Push subscription.
+ */
+export async function unsubscribeWebPush(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const raw = req.body || {};
+    const subscription = raw.subscription || raw;
+    const endpoint = (subscription.endpoint || raw.endpoint || '').trim();
+
+    if (!endpoint) {
+      if (req.user?.id) {
+        await WebPushSubscriptionModel.updateMany(
+          { user_id: req.user.id },
+          { $set: { is_active: false } }
+        );
+        res.json({ success: true, message: 'All web push subscriptions deactivated for user' });
+        return;
+      }
+      res.status(400).json({
+        success: false,
+        error: { message: 'Subscription endpoint is required', code: 'ENDPOINT_REQUIRED' },
+      });
+      return;
+    }
+
+    await WebPushSubscriptionModel.findOneAndUpdate(
+      { endpoint },
+      { $set: { is_active: false } }
+    );
+
+    console.log(`[WebPush] Deactivated browser subscription: ${endpoint.slice(0, 35)}...`);
+    res.json({ success: true, message: 'Web push subscription deactivated' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+

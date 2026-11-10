@@ -1,0 +1,175 @@
+import { Request, Response, NextFunction } from 'express';
+import mongoose from 'mongoose';
+import { BrandModel, CreateBrandDTO, UpdateBrandDTO } from '../models/Brand';
+import { DeviceModelModel } from '../models/DeviceModel';
+import { invalidateCachePrefix } from '../utils/cache';
+
+export async function getBrands(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { category, search } = req.query;
+
+    const filter: Record<string, any> = {};
+
+    if (category && category !== 'All' && typeof category === 'string') {
+      const cat = category.trim();
+      if (/^macbooks?$/i.test(cat)) {
+        filter.$or = [{ category: /^laptops?$/i }, { name: /^apple$/i }];
+      } else if (/^tablets?/i.test(cat)) {
+        filter.$or = [{ category: /^tablets?$/i }, { name: /^(apple|samsung|lenovo|xiaomi)$/i }];
+      } else if (/^gaming$/i.test(cat)) {
+        filter.$or = [{ category: /^gaming$/i }, { name: /^(sony|microsoft|nintendo|asus|msi|razer)$/i }];
+      } else if (/^cameras?$/i.test(cat)) {
+        filter.$or = [{ category: /^cameras?$/i }, { name: /^(sony|canon|nikon|fujifilm|gopro|dji)$/i }];
+      } else if (/^wearables?$/i.test(cat)) {
+        filter.$or = [{ category: /^wearables?$/i }, { name: /^(apple|samsung|garmin|fitbit|oneplus|xiaomi|realme)$/i }];
+      } else if (/^laptops?$/i.test(cat)) {
+        filter.$or = [{ category: /^laptops?$/i }, { name: /^apple$/i }];
+      } else {
+        filter.category = new RegExp(`^${cat}$`, 'i');
+      }
+    }
+
+    if (search && typeof search === 'string' && search.trim()) {
+      filter.name = new RegExp(search.trim(), 'i');
+    }
+
+    const brands = await BrandModel.find(filter).sort({ name: 1 }).lean();
+
+    res.json({ success: true, count: brands.length, data: brands });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getBrandById(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { id } = req.params;
+
+    let brand = null;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      brand = await BrandModel.findById(id).lean();
+    }
+    if (!brand) {
+      brand = await BrandModel.findOne({
+        $or: [{ _id: id }, { name: new RegExp(`^${id}$`, 'i') }],
+      }).lean().catch(() => null);
+    }
+
+    if (!brand) {
+      res.status(404).json({ success: false, error: { message: 'Brand not found', code: 'NOT_FOUND' } });
+      return;
+    }
+
+    res.json({ success: true, data: brand });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function createBrand(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const payload: CreateBrandDTO = req.body;
+
+    const brandName = payload.name.trim();
+    const existing = await BrandModel.findOne({ name: new RegExp(`^${brandName}$`, 'i') });
+    if (existing) {
+      res.status(409).json({ success: false, error: { message: 'Brand already exists' } });
+      return;
+    }
+
+    const imgUrl = payload.logo_url?.trim() || payload.image_url?.trim() || payload.imageUrl?.trim() || '';
+    const newBrand = await BrandModel.create({
+      name: brandName,
+      logo_url: imgUrl,
+      image_url: imgUrl,
+      category: payload.category?.trim().toUpperCase() || 'SMARTPHONES',
+      description: payload.description?.trim() || '',
+    });
+
+    invalidateCachePrefix('brand');
+
+    res.status(201).json({ success: true, data: newBrand });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function updateBrand(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { id } = req.params;
+    const updates: UpdateBrandDTO = req.body;
+
+    const imgUrl = updates.logo_url?.trim() || updates.image_url?.trim() || updates.imageUrl?.trim();
+    if (imgUrl !== undefined) {
+      updates.logo_url = imgUrl;
+      updates.image_url = imgUrl;
+    }
+
+    let updated = null;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      updated = await BrandModel.findByIdAndUpdate(id, updates, { new: true, runValidators: true });
+    } else {
+      updated = await BrandModel.findOneAndUpdate({ name: id }, updates, { new: true });
+    }
+
+    if (!updated) {
+      res.status(404).json({ success: false, error: { message: 'Brand not found' } });
+      return;
+    }
+
+    invalidateCachePrefix('brand');
+
+    res.json({ success: true, data: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function deleteBrand(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { id } = req.params;
+
+    let deleted = null;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      deleted = await BrandModel.findByIdAndDelete(id);
+    }
+    if (!deleted) {
+      deleted = await BrandModel.findOneAndDelete({ name: new RegExp(`^${id}$`, 'i') });
+    }
+
+    if (deleted) {
+      await DeviceModelModel.deleteMany({
+        $or: [
+          { brand_id: id },
+          { brand_id: deleted._id.toString() },
+          { brand_name: new RegExp(`^${deleted.name}$`, 'i') },
+        ],
+      });
+    }
+
+    invalidateCachePrefix('brand');
+    invalidateCachePrefix('models');
+
+    res.json({ success: true, message: 'Brand deleted successfully' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function seedBrandsController(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { seedBrandsAndModels } = await import('../seed');
+    const result = await seedBrandsAndModels();
+
+    invalidateCachePrefix('brand');
+    invalidateCachePrefix('models');
+
+    res.json({
+      success: true,
+      message: `Successfully populated database with ${result.brandsCount} brands and ${result.modelsCount} device models.`,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
