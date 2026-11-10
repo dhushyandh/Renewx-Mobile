@@ -1,7 +1,7 @@
 import React, { type PropsWithChildren } from 'react';
-import { ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { ScrollView, StyleSheet, View, type RefreshControlProps, type StyleProp, type ViewStyle } from 'react-native';
 import { colors, spacing } from '../theme';
-type Props=PropsWithChildren<{scroll?:boolean;contentContainerStyle?:StyleProp<ViewStyle>;style?:StyleProp<ViewStyle>;refreshControl?:React.ReactElement}>;
+type Props=PropsWithChildren<{scroll?:boolean;contentContainerStyle?:StyleProp<ViewStyle>;style?:StyleProp<ViewStyle>;refreshControl?:React.ReactElement<RefreshControlProps>}>;
 export default function Screen({children,scroll=true,contentContainerStyle,style,refreshControl}:Props) {
  const content=<View style={[styles.content,contentContainerStyle]}>{children}</View>;
  return scroll ? <ScrollView style={[styles.root,style]} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" refreshControl={refreshControl}>{content}</ScrollView> : <View style={[styles.root,styles.fixed,style]}>{content}</View>;
