@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { Platform } from "react-native";
 import { AuthUser, authApi } from "../services/api/auth";
 import { loadAccessToken, setAccessToken } from "../services/api/client";
+import { queryClient } from "../services/query/queryClient";
 
 type AuthState = {
   user: AuthUser | null;
@@ -14,34 +15,78 @@ type AuthState = {
   refreshProfile: () => Promise<void>;
 };
 
-export const useAuthStore = create<AuthState>((set) => ({
+let initialization: Promise<void> | null = null;
+
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   ready: false,
   busy: false,
+
   initialize: async () => {
-    try {
-      const token = await loadAccessToken();
-      if (token || Platform.OS === "web") {
-        try { set({ user: await authApi.me() }); }
-        catch { await setAccessToken(null); set({ user: null }); }
+    if (get().ready) return;
+    if (initialization) return initialization;
+
+    initialization = (async () => {
+      try {
+        const token = await loadAccessToken();
+        if (token || Platform.OS === "web") {
+          try {
+            const user = await authApi.me();
+            set({ user });
+          } catch {
+            await setAccessToken(null);
+            set({ user: null });
+            queryClient.clear();
+          }
+        }
+      } catch {
+        await setAccessToken(null).catch(() => undefined);
+        set({ user: null });
+        queryClient.clear();
+      } finally {
+        set({ ready: true });
+        initialization = null;
       }
-    } finally {
-      set({ ready: true });
-    }
+    })();
+
+    return initialization;
   },
+
   login: async (email, password) => {
     set({ busy: true });
-    try { set({ user: await authApi.login(email, password) }); }
-    finally { set({ busy: false }); }
+    try {
+      const user = await authApi.login(email, password);
+      queryClient.clear();
+      set({ user });
+    } finally {
+      set({ busy: false });
+    }
   },
+
   register: async (name, email, password) => {
     set({ busy: true });
-    try { set({ user: await authApi.register(name, email, password) }); }
-    finally { set({ busy: false }); }
+    try {
+      const user = await authApi.register(name, email, password);
+      queryClient.clear();
+      set({ user });
+    } finally {
+      set({ busy: false });
+    }
   },
+
   logout: async () => {
-    try { await authApi.logout(); }
-    finally { set({ user: null }); }
+    try {
+      await authApi.logout();
+    } finally {
+      queryClient.clear();
+      await setAccessToken(null).catch(() => undefined);
+      set({ user: null, busy: false });
+    }
   },
-  refreshProfile: async () => set({ user: await authApi.me() }),
+
+  refreshProfile: async () => {
+    const user = await authApi.me();
+    set({ user });
+    return;
+  },
 }));
