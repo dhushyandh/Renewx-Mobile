@@ -63,7 +63,8 @@ export const commerceApi = {
   uploadImageBase64: (base64: string, fileName: string, contentType: string) =>
     request<ApiEnvelope<{ url: string }>>("/upload/base64", { method: "POST", body: { base64, fileName, contentType } }),
   createTradeIn: (input: SellRequestInput) => request<ApiEnvelope<any>>("/trade-in/pickup", { method: "POST", body: input }),
-  myTradeIns: () => request<ApiEnvelope<any[]>>("/trade-in/my-requests"),
+  myTradeIns: (params?: { page?: number; limit?: number }) => { const query = new URLSearchParams(); Object.entries(params || {}).forEach(([k,v]) => { if (v !== undefined) query.set(k,String(v)); }); return request<ApiEnvelope<any[]> & { total?: number; page?: number; totalPages?: number }>(`/trade-in/my-requests${query.toString() ? `?${query}` : ""}`); },
+  cancelTradeIn: (id: string, reason?: string) => request<ApiEnvelope<any>>(`/trade-in/pickup/${encodeURIComponent(id)}/cancel`, { method: "POST", body: { reason } }),
   adminTradeIns: (params?: { status?: string; page?: number; limit?: number }) => { const query = new URLSearchParams(); Object.entries(params || {}).forEach(([k,v]) => { if (v !== undefined && v !== "") query.set(k,String(v)); }); return request<ApiEnvelope<any[]> & { total?: number; page?: number; totalPages?: number }>(`/trade-in/pickup${query.toString() ? `?${query}` : ""}`); },
   updateTradeInStatus: (id: string, input: { status: string; approvedAmount?: number; adminNote?: string }) => request<ApiEnvelope<any>>(`/trade-in/pickup/${encodeURIComponent(id)}/status`, { method: "PATCH", body: input }),
   adminAnalytics: (period = "month") => request<ApiEnvelope<any>>(`/analytics?period=${period}`),
