@@ -34,7 +34,7 @@ const setAuthCookie = (req: Request, res: Response, token: string): void => {
     secure: production,
     sameSite: production ? 'none' : 'lax',
     path: '/api',
-    maxAge: 15 * 60 * 1000,
+    maxAge: 30 * 24 * 60 * 60 * 1000,
   });
 };
 const sessionTokenPayload = (req: Request, token: string) =>
