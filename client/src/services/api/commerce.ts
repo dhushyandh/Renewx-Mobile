@@ -20,13 +20,36 @@ export type SellRequestInput = {
   condition: Record<string, unknown>; customerPhone: string; address: string; pincode: string;
   expectedSellingPrice?: number; photos?: string[];
 };
+const storefrontCategory: Record<string, string> = {
+  SMARTPHONES: "Phones", Smartphones: "Phones", Phones: "Phones",
+  LAPTOPS: "Laptops", Laptops: "Laptops",
+  TABLETS: "Tablets", Tablets: "Tablets",
+  AUDIO: "Audio", Audio: "Audio",
+  WEARABLES: "Wearables", Wearables: "Wearables",
+  ACCESSORIES: "Accessories", Accessories: "Accessories",
+  GAMING: "Gaming", Gaming: "Gaming",
+  MONITORS: "Monitors", Monitors: "Monitors",
+  OTHER: "Other", Other: "Other",
+};
+
 export const commerceApi = {
   products: (params?: { page?: number; limit?: number; category?: string; search?: string; sort?: string }) => {
     const query = new URLSearchParams();
-    Object.entries(params || {}).forEach(([key, value]) => { if (value !== undefined && value !== "") query.set(key, String(value)); });
-    return request<ApiEnvelope<Product[]> & { total?: number; totalPages?: number; page?: number; limit?: number }>(`/products${query.toString() ? `?${query}` : ""}`);
+    Object.entries(params || {}).forEach(([key, value]) => {
+      if (value === undefined || value === "") return;
+      query.set(key, key === "category" ? (storefrontCategory[String(value)] || String(value)) : String(value));
+    });
+    return request<ApiEnvelope<Product[]> & { pagination?: { total: number; page: number; pages: number }; total?: number; totalPages?: number; page?: number; limit?: number }>(`/products${query.toString() ? `?${query}` : ""}`).then(response => ({
+      ...response,
+      total: response.total ?? response.pagination?.total ?? response.data?.length ?? 0,
+      totalPages: response.totalPages ?? response.pagination?.pages ?? 1,
+      page: response.page ?? response.pagination?.page ?? 1,
+    }));
   },
   product: (id: string) => request<ApiEnvelope<Product>>(`/products/${encodeURIComponent(id)}`),
+  wishlist: () => request<ApiEnvelope<{ products: Product[] }>>("/wishlist"),
+  addWishlistItem: (productId: string) => request<ApiEnvelope<{ products: Product[] }>>("/wishlist", { method: "POST", body: { productId } }),
+  removeWishlistItem: (productId: string) => request<ApiEnvelope<{ products: Product[] }>>(`/wishlist/${encodeURIComponent(productId)}`, { method: "DELETE" }),
   orders: () => request<ApiEnvelope<any[]> & { count?: number }>("/orders"),
   order: (id: string) => request<ApiEnvelope<any>>(`/orders/${encodeURIComponent(id)}`),
   addresses: () => request<ApiEnvelope<any[]>>("/users/me/addresses"),
