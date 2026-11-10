@@ -76,11 +76,20 @@ export async function createPickupRequest(req: AuthenticatedRequest, res: Respon
     const model = (payload.model || rawBody.selectedModel || 'Device').trim();
     const storage = (payload.storage || 'Standard').trim();
 
-    if (!customerPhone && !address) {
-      res.status(400).json({
-        success: false,
-        error: { message: 'Customer phone number and pickup address are required.' },
-      });
+    if (!/^\\d{10}$/.test(customerPhone) || address.length < 8 || address.length > 500 || !/^\\d{6}$/.test(pincode)) {
+      res.status(400).json({ success: false, error: { message: 'A valid 10-digit phone, complete pickup address and 6-digit PIN code are required.', code: 'INVALID_PICKUP_DETAILS' } });
+      return;
+    }
+    if (!category || category.length > 60 || !brand || brand.length > 100 || !model || model.length > 120 || !storage || storage.length > 40) {
+      res.status(400).json({ success: false, error: { message: 'Valid device category, brand, model and variant are required.', code: 'INVALID_DEVICE_DETAILS' } });
+      return;
+    }
+    if (!Number.isFinite(quoteAmount) || quoteAmount <= 0 || quoteAmount > 10000000) {
+      res.status(400).json({ success: false, error: { message: 'A valid estimated device value is required.', code: 'INVALID_VALUATION' } });
+      return;
+    }
+    if (photosList.length > 4 || photosList.some((photo) => !/^https:\\/\\//i.test(photo))) {
+      res.status(400).json({ success: false, error: { message: 'Attach up to four uploaded photo URLs.', code: 'INVALID_PHOTOS' } });
       return;
     }
 
@@ -321,9 +330,11 @@ export async function updateTradeInStatus(
     const lifecycleAfterApproval = new Set(['scheduled', 'picked_up', 'inspected', 'completed', 'cancelled']);
     const canTransition =
       (request.status === 'pending' && (status === 'approved' || status === 'rejected')) ||
-      ((request.status === 'approved' || request.status === 'rejected') &&
-        (status === 'approved' || status === 'rejected' || status === 'scheduled')) ||
-      (!decisionStatuses.has(request.status) && lifecycleAfterApproval.has(status));
+      ((request.status === 'approved' || request.status === 'rejected') && status === 'scheduled') ||
+      (request.status === 'scheduled' && status === 'picked_up') ||
+      (request.status === 'picked_up' && status === 'inspected') ||
+      (request.status === 'inspected' && status === 'completed') ||
+      (request.status !== 'completed' && request.status !== 'cancelled' && status === 'cancelled');
 
     if (!canTransition && request.status !== status) {
       res.status(409).json({
@@ -337,8 +348,12 @@ export async function updateTradeInStatus(
     const previousValuation = request.valuation_amount;
     request.status = status;
     let valuationChanged = false;
-    if (approvedAmount !== undefined && Number.isFinite(Number(approvedAmount))) {
+    if (approvedAmount !== undefined) {
       const newAmount = Number(approvedAmount);
+      if (!Number.isFinite(newAmount) || newAmount < 0 || newAmount > 10000000) {
+        res.status(400).json({ success: false, error: { message: 'Approved amount must be a valid non-negative amount.', code: 'INVALID_APPROVED_AMOUNT' } });
+        return;
+      }
       if (newAmount !== previousValuation) {
         valuationChanged = true;
       }
