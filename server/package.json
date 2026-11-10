@@ -43,7 +43,8 @@
     "@types/web-push": "^3.6.4",
     "@types/ws": "^8.18.1",
     "tsx": "^4.23.13",
-    "typescript": "^5.5.3"
+    "typescript": "^5.5.3",
+    "@types/pdfkit": "^0.17.3"
   },
   "engines": {
     "node": ">=22"
