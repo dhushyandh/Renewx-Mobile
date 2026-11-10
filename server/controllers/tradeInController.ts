@@ -112,11 +112,6 @@ export async function createPickupRequest(req: AuthenticatedRequest, res: Respon
       new Set(candidates.filter((p: any) => typeof p === 'string' && p.trim().length > 0))
     );
 
-    // Provide default transparent cutout image if client did not supply photos
-    if (photosList.length === 0) {
-      photosList.push('https://pngimg.com/uploads/iphone_12/iphone_12_PNG36.png');
-    }
-
     const quoteAmount = Number(
       payload.expectedSellingPrice ||
       rawBody.expectedPrice ||
