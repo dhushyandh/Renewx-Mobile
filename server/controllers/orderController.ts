@@ -1060,21 +1060,18 @@ async function finalizePaidOrder(order: any, paymentId: string): Promise<any> {
           action: 'payment_successful',
           userId: order.user_id,
           orderId: order.id,
-          reason: req.body?.reason ? String(req.body.reason).trim() : undefined,
           subtotal: order.subtotal,
         });
         await notifyUserEvent({
           action: 'order_placed',
           userId: order.user_id,
           orderId: order.id,
-          reason: req.body?.reason ? String(req.body.reason).trim() : undefined,
           subtotal: order.subtotal,
           paymentMethod: 'Razorpay',
         });
 
         await notifyAdminsNewOrder({
           orderId: order.id,
-          reason: req.body?.reason ? String(req.body.reason).trim() : undefined,
           subtotal: order.subtotal,
           customerName: order.customer_info?.name || 'Customer',
           customerPhone: order.customer_info?.phone || '',

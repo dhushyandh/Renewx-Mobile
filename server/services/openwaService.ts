@@ -662,7 +662,7 @@ export async function handleOrderNotificationEvent(
 
     const orderIdStr = String(order.id || (order as any)._id);
     const customerName = order.customer_info?.name || 'Customer';
-    const orderNumber = order.order_number || orderIdStr.slice(-6).toUpperCase();
+    const orderNumber = (order as { order_number?: string }).order_number || orderIdStr.slice(-6).toUpperCase();
     const total = order.subtotal;
 
     let templateAction: WhatsAppTemplateAction | null = null;
