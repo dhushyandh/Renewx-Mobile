@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View, RefreshControl } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
@@ -34,7 +34,7 @@ export default function ShopScreen() {
   }, [productsQuery.data, sort]);
 
   return (
-    <Screen contentContainerStyle={styles.page}>
+    <Screen contentContainerStyle={styles.page} refreshControl={<RefreshControl refreshing={productsQuery.isRefetching} onRefresh={() => productsQuery.refetch()} tintColor={colors.navy} />}>
       <View style={styles.header}>
         <View><Text style={styles.eyebrow}>DISCOVER RENEWX</Text><Text style={styles.title}>Shop devices</Text></View>
         <Pressable accessibilityRole="button" accessibilityLabel="Open sort options" onPress={() => setFiltersOpen(v => !v)} style={styles.filterButton}>
