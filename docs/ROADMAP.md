@@ -1,35 +1,28 @@
-# RenewX Crew 2.0 Roadmap
+# RenewX Delivery Roadmap
 
-## Milestone 0 — Discovery
-Audit the existing backend and source applications; document verified API contracts.
+## Foundation
+- [x] Expo Router single-app structure
+- [x] TypeScript/TSX source foundation
+- [x] Shared brand tokens, API boundary and query client
+- [x] Feature folders and route shell
+- [ ] Install dependencies; Expo Doctor and typecheck
+- [ ] Verify Android, iOS and web builds
 
-## Milestone 1 — Foundation (current)
-Expo Router, cross-platform app shell, design tokens, API boundary, query client, environment template and project documentation.
+## Storefront
+- [ ] Audit existing backend and authentication
+- [ ] Verify catalogue/category endpoints and image contract
+- [ ] Live home feed, categories, search, filters and product listing
+- [ ] Loading skeleton, empty, error and retry states
+- [ ] Product details and not-found state
 
-Acceptance:
-- Dependencies install.
-- Expo Doctor passes.
-- App boots on Android/iOS simulator and web.
-- Web export succeeds.
-- No secrets committed.
+## Customer journeys
+- [ ] Authentication and profile
+- [ ] Wishlist and server-backed cart
+- [ ] Address, checkout and payment
+- [ ] Order history, details and real tracking
+- [ ] Sell/upgrade workflow
 
-## Milestone 2 — Storefront
-Home, categories, search, filters, product listing, product details and wishlist using live backend data.
-
-## Milestone 3 — Identity
-Onboarding, authentication, Google sign-in, profile and addresses.
-
-## Milestone 4 — Commerce
-Cart, checkout, payments and order confirmation.
-
-## Milestone 5 — Orders
-Order history, backend-driven status timeline, tracking and notifications.
-
-## Milestone 6 — Sell and Upgrade
-Device submission, condition workflow, valuation and pickup tracking.
-
-## Milestone 7 — Production hardening
-Security review, accessibility, performance, bundle-size audit, platform QA and release preparation.
-
-## Quality gates
-Every milestone requires functional testing, API validation, loading/empty/error/retry states, regression checks and truthful completion reporting.
+## Production readiness
+- [ ] Responsive QA on mobile, tablet and desktop
+- [ ] Accessibility and offline/error handling
+- [ ] Expo Doctor, typecheck, web export and native preview builds
