@@ -189,6 +189,7 @@ export type NotificationEvent =
     action: 'order_placed';
     userId: string;
     orderId: string;
+    reason?: string;
     subtotal?: number;
     paymentMethod?: string;
   }
@@ -196,12 +197,14 @@ export type NotificationEvent =
     action: 'payment_successful';
     userId: string;
     orderId: string;
+    reason?: string;
     subtotal?: number;
   }
   | {
     action: 'order_status_changed';
     userId: string;
     orderId: string;
+    reason?: string;
     status: string;
     courier?: string;
     trackingNumber?: string;
@@ -210,6 +213,7 @@ export type NotificationEvent =
     action: 'order_shipped';
     userId: string;
     orderId: string;
+    reason?: string;
     courier?: string;
     trackingNumber?: string;
   }
@@ -217,12 +221,14 @@ export type NotificationEvent =
     action: 'out_for_delivery';
     userId: string;
     orderId: string;
+    reason?: string;
     courier?: string;
   }
   | {
     action: 'order_delivered';
     userId: string;
     orderId: string;
+    reason?: string;
   }
   | {
     action: 'order_cancelled';
@@ -234,6 +240,7 @@ export type NotificationEvent =
     action: 'refund_update';
     userId: string;
     orderId: string;
+    reason?: string;
     amount?: number;
     status?: 'initiated' | 'completed' | 'pending';
   }
@@ -801,6 +808,7 @@ export async function broadcastNewProductArrival(product: {
 
 export interface AdminNewOrderNotificationPayload {
   orderId: string;
+  reason?: string;
   subtotal: number;
   customerName: string;
   customerPhone?: string;
