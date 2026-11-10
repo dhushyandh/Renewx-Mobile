@@ -11,4 +11,4 @@ export const useCommerceStore=create<CommerceState>()(persist((set)=>({
  removeFromCart:(productId)=>set(state=>({cart:state.cart.filter(line=>(line.product.id||line.product._id)!==productId)})),
  toggleWishlist:(product)=>set(state=>{const id=product.id||product._id;const exists=state.wishlist.some(item=>(item.id||item._id)===id);return{wishlist:exists?state.wishlist.filter(item=>(item.id||item._id)!==id):[...state.wishlist,product]};}),
  clearCart:()=>set({cart:[]}),
-}),{name:"renewx-commerce-v1",storage:createJSONStorage(()=>AsyncStorage),partialize:(state)=>({cart:state.cart,wishlist:state.wishlist}) as CommerceState}));
+}),{name:"renewx-commerce-v1",storage:createJSONStorage(()=>AsyncStorage)}));
