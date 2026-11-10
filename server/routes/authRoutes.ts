@@ -14,6 +14,7 @@ import {
 } from '../controllers/authController';
 import { authenticateToken, requireAdmin } from '../middleware/auth';
 import { authRateLimiter } from '../middleware/rateLimiter';
+import { env } from '../config/env';
 
 const router = Router();
 
@@ -23,6 +24,17 @@ router.post('/login', authRateLimiter, login);
 router.post('/google', authRateLimiter, googleAuth);
 router.post('/send-otp', authRateLimiter, sendAuthOtp);
 router.post('/verify-otp', authRateLimiter, verifyAuthOtp);
+
+router.post('/logout', (req, res) => {
+  const production = env.NODE_ENV === 'production';
+  res.clearCookie('renewx_access', {
+    httpOnly: true,
+    secure: production,
+    sameSite: production ? 'none' : 'lax',
+    path: '/api',
+  });
+  res.json({ success: true, message: 'Logged out successfully' });
+});
 
 // Password Reset & Email Verification endpoints
 router.post('/forgot-password', authRateLimiter, requestPasswordReset);
