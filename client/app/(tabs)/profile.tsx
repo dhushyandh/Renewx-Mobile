@@ -1,50 +1,9 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import Screen from '../../src/components/Screen';
-import { colors, radius, spacing } from '../../src/theme';
-
-const items = [
-  { icon:'person-outline' as const, title:'Personal information', detail:'Name, email and phone' },
-  { icon:'location-outline' as const, title:'Saved addresses', detail:'Manage delivery locations' },
-  { icon:'heart-outline' as const, title:'Wishlist', detail:'Devices you have saved' },
-  { icon:'help-circle-outline' as const, title:'Help and support', detail:'Get help with RenewX' },
-  { icon:'document-text-outline' as const, title:'Terms and privacy', detail:'Policies and legal information' },
-];
-
-export default function ProfileScreen() {
-  return <Screen contentContainerStyle={styles.page}>
-    <View style={styles.header}>
-      <Text style={styles.eyebrow}>YOUR ACCOUNT</Text>
-      <Text style={styles.title}>Profile</Text>
-    </View>
-    <View style={styles.accountCard}>
-      <View style={styles.avatar}><Ionicons name="person" size={28} color={colors.navy}/></View>
-      <View style={styles.accountCopy}><Text style={styles.accountTitle}>Welcome to RenewX</Text><Text style={styles.accountSubtitle}>Sign in to manage your account</Text></View>
-      <Ionicons name="chevron-forward" size={19} color={colors.muted}/>
-    </View>
-    <Text style={styles.sectionTitle}>Account settings</Text>
-    <View style={styles.menu}>
-      {items.map((item,index)=><Pressable key={item.title} style={[styles.menuItem,index===items.length-1&&styles.lastItem]}>
-        <View style={styles.menuIcon}><Ionicons name={item.icon} size={20} color={colors.navy}/></View>
-        <View style={styles.menuCopy}><Text style={styles.menuTitle}>{item.title}</Text><Text style={styles.menuDetail}>{item.detail}</Text></View>
-        <Ionicons name="chevron-forward" size={18} color={colors.muted}/>
-      </Pressable>)}
-    </View>
-    <View style={styles.footer}><Text style={styles.footerBrand}>Renew<Text style={styles.footerX}>X</Text></Text><Text style={styles.footerText}>BUY PRE-OWNED · SELL · UPGRADE</Text></View>
-  </Screen>;
-}
-const styles=StyleSheet.create({
- page:{paddingTop:spacing.lg,paddingBottom:spacing.xxl,gap:spacing.lg},
- header:{gap:5},eyebrow:{color:colors.muted,fontSize:10,fontWeight:'800',letterSpacing:1.2},
- title:{color:colors.navy,fontSize:26,fontWeight:'900'},
- accountCard:{flexDirection:'row',alignItems:'center',gap:13,padding:spacing.md,borderRadius:radius.lg,backgroundColor:colors.cloud},
- avatar:{width:54,height:54,borderRadius:27,backgroundColor:colors.yellow,alignItems:'center',justifyContent:'center'},
- accountCopy:{flex:1,gap:4},accountTitle:{color:colors.navy,fontSize:15,fontWeight:'800'},accountSubtitle:{color:colors.muted,fontSize:12},
- sectionTitle:{color:colors.navy,fontSize:16,fontWeight:'800',marginBottom:-8},
- menu:{borderWidth:1,borderColor:colors.border,borderRadius:radius.lg,backgroundColor:colors.white,paddingHorizontal:14},
- menuItem:{minHeight:70,flexDirection:'row',alignItems:'center',gap:12,borderBottomWidth:1,borderBottomColor:colors.border},
- lastItem:{borderBottomWidth:0},menuIcon:{width:38,height:38,borderRadius:12,backgroundColor:colors.cloud,alignItems:'center',justifyContent:'center'},
- menuCopy:{flex:1,gap:4},menuTitle:{color:colors.navy,fontSize:13,fontWeight:'800'},menuDetail:{color:colors.muted,fontSize:11},
- footer:{alignItems:'center',gap:4,paddingTop:spacing.md},footerBrand:{color:colors.navy,fontSize:21,fontWeight:'900',fontStyle:'italic'},
- footerX:{color:colors.yellow},footerText:{color:colors.muted,fontSize:9,fontWeight:'700',letterSpacing:1}
-});
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { router } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import Screen from "../../src/components/Screen";
+import { useAuthStore } from "../../src/stores/authStore";
+import { colors, radius, spacing } from "../../src/theme";
+const items=[{icon:"person-outline" as const,title:"Personal information",detail:"Update your name and contact details",path:"/onboarding"},{icon:"location-outline" as const,title:"Saved addresses",detail:"Manage delivery locations",path:"/addresses"},{icon:"heart-outline" as const,title:"Wishlist",detail:"Devices you have saved",path:"/wishlist"},{icon:"bag-outline" as const,title:"Shopping cart",detail:"Review items before checkout",path:"/cart"},{icon:"receipt-outline" as const,title:"My orders",detail:"Track purchases and deliveries",path:"/(tabs)/orders"}];
+export default function ProfileScreen(){const user=useAuthStore(s=>s.user);const logout=useAuthStore(s=>s.logout);return <Screen contentContainerStyle={s.page}><View style={s.header}><Text style={s.eyebrow}>YOUR ACCOUNT</Text><Text style={s.title}>Profile</Text></View><View style={s.accountCard}><View style={s.avatar}><Ionicons name="person" size={28} color={colors.navy}/></View><View style={s.accountCopy}><Text style={s.accountTitle}>{user?.full_name||"RenewX customer"}</Text><Text style={s.accountSubtitle}>{user?.email}</Text><Text style={s.role}>{user?.role==="admin"?"Administrator":"Customer account"}</Text></View></View><Text style={s.sectionTitle}>Account settings</Text><View style={s.menu}>{items.map((item,index)=><Pressable key={item.title} onPress={()=>router.push(item.path as any)} style={[s.menuItem,index===items.length-1&&s.lastItem]}><View style={s.menuIcon}><Ionicons name={item.icon} size={20} color={colors.navy}/></View><View style={s.menuCopy}><Text style={s.menuTitle}>{item.title}</Text><Text style={s.menuDetail}>{item.detail}</Text></View><Ionicons name="chevron-forward" size={18} color={colors.muted}/></Pressable>)}</View>{user?.role==="admin"?<Pressable onPress={()=>router.push("/admin")} style={s.admin}><Ionicons name="shield-checkmark-outline" size={19} color={colors.navy}/><Text style={s.adminText}>Open admin dashboard</Text><Ionicons name="chevron-forward" size={18} color={colors.navy}/></Pressable>:null}<Pressable onPress={async()=>{await logout();router.replace("/(auth)/login");}} style={s.logout}><Ionicons name="log-out-outline" size={18} color={colors.danger}/><Text style={s.logoutText}>Sign out</Text></Pressable><View style={s.footer}><Text style={s.footerBrand}>Renew<Text style={s.footerX}>X</Text></Text><Text style={s.footerText}>BUY PRE-OWNED · SELL · UPGRADE</Text></View></Screen>}
+const s=StyleSheet.create({page:{paddingTop:spacing.lg,paddingBottom:spacing.xxl,gap:spacing.lg},header:{gap:5},eyebrow:{color:colors.muted,fontSize:10,fontWeight:"800",letterSpacing:1.2},title:{color:colors.navy,fontSize:26,fontWeight:"900"},accountCard:{flexDirection:"row",alignItems:"center",gap:13,padding:spacing.md,borderRadius:radius.lg,backgroundColor:colors.cloud},avatar:{width:54,height:54,borderRadius:27,backgroundColor:colors.yellow,alignItems:"center",justifyContent:"center"},accountCopy:{flex:1,gap:4},accountTitle:{color:colors.navy,fontSize:15,fontWeight:"800"},accountSubtitle:{color:colors.muted,fontSize:12},role:{color:colors.success,fontSize:11,fontWeight:"800"},sectionTitle:{color:colors.navy,fontSize:16,fontWeight:"800",marginBottom:-8},menu:{borderWidth:1,borderColor:colors.border,borderRadius:radius.lg,backgroundColor:colors.white,paddingHorizontal:14},menuItem:{minHeight:70,flexDirection:"row",alignItems:"center",gap:12,borderBottomWidth:1,borderBottomColor:colors.border},lastItem:{borderBottomWidth:0},menuIcon:{width:38,height:38,borderRadius:12,backgroundColor:colors.cloud,alignItems:"center",justifyContent:"center"},menuCopy:{flex:1,gap:4},menuTitle:{color:colors.navy,fontSize:13,fontWeight:"800"},menuDetail:{color:colors.muted,fontSize:11},admin:{minHeight:48,borderRadius:radius.md,backgroundColor:colors.yellow,paddingHorizontal:14,flexDirection:"row",alignItems:"center",gap:9},adminText:{flex:1,color:colors.navy,fontWeight:"900"},logout:{flexDirection:"row",alignItems:"center",justifyContent:"center",gap:8,padding:13,borderWidth:1,borderColor:"#FECACA",borderRadius:radius.md},logoutText:{color:colors.danger,fontWeight:"800"},footer:{alignItems:"center",gap:4,paddingTop:spacing.md},footerBrand:{color:colors.navy,fontSize:21,fontWeight:"900",fontStyle:"italic"},footerX:{color:colors.yellow},footerText:{color:colors.muted,fontSize:9,fontWeight:"700",letterSpacing:1}});
