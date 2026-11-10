@@ -6,6 +6,7 @@ import { StatusBar } from "expo-status-bar";
 import { queryClient } from "../src/services/query/queryClient";
 import { colors } from "../src/theme";
 import { useAuthStore } from "../src/stores/authStore";
+import CookieConsent from "../src/components/CookieConsent";
 
 export default function RootLayout() {
   const initialize = useAuthStore(state => state.initialize);
@@ -16,9 +17,13 @@ export default function RootLayout() {
   useEffect(() => { void initialize(); }, [initialize]);
   useEffect(() => {
     if (!ready) return;
-    const inAuth = segments[0] === "(auth)";
+    const first = segments[0];
+    const inAuth = first === "(auth)";
+    const inOnboarding = first === "onboarding";
     if (!user && !inAuth) router.replace("/(auth)/login");
-    else if (user && inAuth) router.replace("/(tabs)");
+    else if (user && inAuth) router.replace(user.profile_completed ? "/(tabs)" : "/onboarding");
+    else if (user && !user.profile_completed && !inOnboarding) router.replace("/onboarding");
+    else if (user && user.profile_completed && inOnboarding) router.replace("/(tabs)");
   }, [ready, user, segments, router]);
-  return <SafeAreaProvider><QueryClientProvider client={queryClient}><StatusBar style="dark" backgroundColor={colors.white}/><Stack screenOptions={{headerShown:false,contentStyle:{backgroundColor:colors.white}}}/></QueryClientProvider></SafeAreaProvider>;
+  return <SafeAreaProvider><QueryClientProvider client={queryClient}><StatusBar style="dark" backgroundColor={colors.white}/><Stack screenOptions={{headerShown:false,contentStyle:{backgroundColor:colors.white}}}/><CookieConsent/></QueryClientProvider></SafeAreaProvider>;
 }
