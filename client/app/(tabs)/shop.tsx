@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import Screen from "../../src/components/Screen";
 import StateMessage from "../../src/components/StateMessage";
 import { commerceApi, Product } from "../../src/services/api/commerce";
@@ -11,8 +11,9 @@ import { colors, radius, spacing } from "../../src/theme";
 const categories = ["All", "Phones", "Laptops", "Tablets", "Audio", "Wearables", "Accessories", "Gaming", "Monitors"];
 
 export default function ShopScreen() {
+  const params = useLocalSearchParams<{ category?: string }>();
   const [query, setQuery] = useState("");
-  const [activeCategory, setActiveCategory] = useState("All");
+  const [activeCategory, setActiveCategory] = useState(params.category || "All");
   const [sort, setSort] = useState<"recommended" | "low" | "high">("recommended");
   const [filtersOpen, setFiltersOpen] = useState(false);
 
